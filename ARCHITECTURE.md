@@ -3,6 +3,12 @@
 ## Context
 This is a greenfield personal project serving two purposes: a functional leaderboard for a physical group-vs-group arena game ("The Ark8de"), and a structured learning path through modern DevOps and Go development. The repo currently has only a README. We start from scratch.
 
+**Learning-first project.** All code written in this project follows the rules in `CLAUDE.md`:
+- Every function, struct, and non-obvious line is commented
+- Every import is annotated explaining what the package is and why it's used
+- Go concepts are explained inline the first time they appear
+- After each phase, a `docs/phase-N-complete.md` is created with Mermaid flow diagrams of the app's information flow and DB schema at that point
+
 ---
 
 ## Domain Model
