@@ -1,0 +1,74 @@
+# -----------------------------------------------------------------
+# .gitignore for Ark8de-L33tBo4rd
+# -----------------------------------------------------------------
+# This file tells git which files and directories to NEVER track.
+# Files listed here will never appear in `git status` or be added
+# to commits, protecting secrets and keeping the repo clean.
+# -----------------------------------------------------------------
+
+# --- Go build output ---
+# The compiled binary lives here; we never commit binaries to git
+# because they are platform-specific and can always be rebuilt.
+bin/
+monolith/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go test binary output
+*.test
+
+# Go test coverage output
+*.out
+
+# --- Environment files ---
+# .env contains secrets (DB passwords, JWT keys, etc.).
+# NEVER commit this file — it could expose credentials.
+# Use .env.example (committed) to document what vars are needed.
+.env
+.env.local
+.env.*.local
+
+# --- Terraform ---
+# .tfstate files contain the current state of your infrastructure,
+# including sensitive values like passwords. Use Terraform Cloud for
+# remote state instead of committing these.
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# The .terraform directory contains downloaded provider plugins —
+# large binaries that should be re-downloaded via `terraform init`.
+.terraform/
+.terraform.lock.hcl
+
+# Terraform variable files that may contain secrets
+terraform.tfvars
+*.auto.tfvars
+
+# --- IDE and editor files ---
+# These are personal editor settings; different developers use
+# different tools, so these don't belong in the shared repo.
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# --- Docker ---
+# Locally built images are platform-specific; we rebuild from Dockerfile.
+docker-compose.override.yml
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Test coverage HTML reports ---
+coverage.html

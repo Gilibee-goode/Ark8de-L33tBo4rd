@@ -1,0 +1,121 @@
+# -----------------------------------------------------------------
+# docker-compose.yml — Local development environment
+# -----------------------------------------------------------------
+# This file defines the services that make up the Ark8de dev stack.
+# Start everything with: docker compose -f infra/docker-compose.yml up --build
+# Stop everything with:  docker compose -f infra/docker-compose.yml down
+#
+# SERVICES:
+#   postgres  — PostgreSQL database (the source of truth)
+#   pgadmin   — Web UI for browsing the database (optional, dev only)
+#   app       — The Ark8de Go HTTP server
+# -----------------------------------------------------------------
+
+services:
+
+  # ---------------------------------------------------------------
+  # postgres — PostgreSQL 16 database
+  # ---------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    # Alpine variant keeps the image small (~80MB vs ~370MB for the default).
+    container_name: ark8de-postgres
+
+    environment:
+      # These env vars are read by the official postgres image on first boot
+      # to create the initial database, user, and password.
+      POSTGRES_DB: ark8de
+      POSTGRES_USER: ark8de
+      POSTGRES_PASSWORD: ark8de_dev
+
+    ports:
+      # Map host port 5432 to container port 5432, so you can connect
+      # from your laptop using any PostgreSQL client (psql, TablePlus, etc.)
+      # Format: "HOST_PORT:CONTAINER_PORT"
+      - "5432:5432"
+
+    volumes:
+      # Named volume: Docker manages the data directory on the host.
+      # This persists data between `docker compose down` / `up` cycles.
+      # Without this, all data is lost every time the container is removed.
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      # pg_isready checks whether PostgreSQL is accepting connections.
+      # The `depends_on: condition: service_healthy` blocks below wait for
+      # this check to pass before starting the dependent services.
+      test: ["CMD-SHELL", "pg_isready -U ark8de -d ark8de"]
+      interval: 5s      # check every 5 seconds
+      timeout: 5s       # fail if no response within 5 seconds
+      retries: 10       # mark as unhealthy only after 10 consecutive failures
+      start_period: 10s # give PostgreSQL 10 seconds to start before counting failures
+
+    restart: unless-stopped
+    # Restart the container automatically unless you explicitly stop it.
+
+  # ---------------------------------------------------------------
+  # pgadmin — Web-based PostgreSQL database browser (dev tool)
+  # ---------------------------------------------------------------
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: ark8de-pgadmin
+
+    environment:
+      # Default admin credentials for the pgAdmin web UI.
+      # These are dev-only credentials — pgAdmin itself is not exposed in production.
+      PGADMIN_DEFAULT_EMAIL: admin@ark8de.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+
+    ports:
+      # pgAdmin's web UI runs on port 80 inside the container.
+      # We map it to 5050 on the host to avoid conflicts.
+      # Open http://localhost:5050 in your browser to access it.
+      - "5050:80"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+        # Wait until postgres passes its healthcheck before starting pgadmin.
+        # This prevents pgadmin from starting before the DB is ready to accept connections.
+
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------
+  # app — The Ark8de Go HTTP server
+  # ---------------------------------------------------------------
+  app:
+    # build: instructs Docker Compose to build the image from the Dockerfile
+    # at the specified path, relative to this docker-compose.yml file.
+    build:
+      context: ../monolith  # the Dockerfile is at monolith/Dockerfile
+      dockerfile: Dockerfile
+
+    container_name: ark8de-app
+
+    ports:
+      # Map host port 8080 to the container's port 8080.
+      # The Go server listens on 8080 (set by the PORT env var below).
+      - "8080:8080"
+
+    environment:
+      # DATABASE_URL uses the postgres service name as the hostname.
+      # Docker Compose creates an internal DNS entry for each service,
+      # so "postgres" resolves to the postgres container's IP address.
+      DATABASE_URL: postgres://ark8de:ark8de_dev@postgres:5432/ark8de?sslmode=disable
+      PORT: "8080"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+        # Do not start the app until postgres is healthy.
+        # Without this, the app would crash immediately trying to connect.
+
+    restart: unless-stopped
+
+# ---------------------------------------------------------------
+# Named volumes — managed by Docker, persisted across restarts
+# ---------------------------------------------------------------
+volumes:
+  postgres_data:
+    # This volume stores all PostgreSQL data files.
+    # Data survives `docker compose down` but is wiped by `docker compose down -v`.

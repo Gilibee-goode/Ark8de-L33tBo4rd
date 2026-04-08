@@ -1,14 +1,14 @@
 # Ark8de-L33tBo4rd — Progress Tracker
 
 ## Phase 0: Foundation
-- [ ] Init Go module
-- [ ] Create repo directory structure
-- [ ] `docker-compose.yml` (postgres + app + pgAdmin)
-- [ ] SQL migrations (golang-migrate)
-- [ ] Makefile (`dev`, `migrate-up`, `migrate-down`, `test`)
-- [ ] Seed script scaffold
-- [ ] `GET /healthz` returns 200
-- [ ] `docs/phase-0-complete.md` with diagrams
+- [x] Init Go module (`monolith/go.mod` — module `github.com/Gilibee-goode/ark8de-l33tbo4rd`, Go 1.23)
+- [x] Create repo directory structure
+- [x] `docker-compose.yml` (postgres + app + pgAdmin) — `infra/docker-compose.yml`
+- [x] SQL migrations (golang-migrate) — 11 migration pairs in `db/migrations/`
+- [x] Makefile (`dev`, `migrate-up`, `migrate-down`, `test`, `build`, `seed`, `deps`, `help`)
+- [x] Seed script scaffold (`scripts/seed.go` — Phase 1 will implement)
+- [x] `GET /healthz` returns 200 — pings DB, returns 503 if unreachable
+- [x] `docs/phase-0-complete.md` with Mermaid flow + ER diagrams
 
 ## Phase 1: Monolith
 - [ ] Auth — register, login, JWT, 4-tier role middleware
