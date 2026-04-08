@@ -20,10 +20,10 @@
 # =================================================================
 # Stage 1: builder — compile the Go binary
 # =================================================================
-# golang:1.23-alpine is the official Go image based on Alpine Linux.
+# golang:1.24-alpine is the official Go image based on Alpine Linux.
 # Alpine is a minimal Linux distribution (~5MB) that keeps the build
 # image small. We use this stage ONLY for compilation.
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 # Set the working directory inside the container.
 # All subsequent commands (COPY, RUN) operate relative to this path.
