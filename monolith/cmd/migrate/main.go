@@ -91,9 +91,9 @@ func runMigrations(dbURL, command string) error {
 	// "file://" means read from the filesystem at the given path.
 	// The path is relative to where the binary is run from, which for
 	// `go run ./cmd/migrate` from the monolith/ directory is monolith/.
-	// Our migrations live at <repo-root>/db/migrations/, which is two
-	// levels up from monolith/.
-	sourceURL := "file://../../db/migrations"
+	// Our migrations live at <repo-root>/db/migrations/, which is one
+	// level up from monolith/.
+	sourceURL := "file://../db/migrations"
 
 	// migrate.New creates a migration runner.
 	// It reads the source directory, discovers all *.up.sql and *.down.sql

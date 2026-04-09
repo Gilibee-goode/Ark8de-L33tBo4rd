@@ -1,0 +1,89 @@
+# -----------------------------------------------------------------
+# Taskfile.yml — Top-level developer commands for Ark8de-L33tBo4rd
+# -----------------------------------------------------------------
+# Task is a modern, YAML-based alternative to Make.
+# Install: brew install go-task
+# Run:     task <name>        (e.g. task dev)
+# List:    task --list        (shows all tasks with descriptions)
+#
+# HOW THIS WORKS:
+#   Each entry under `tasks:` is a named task. When you run `task <name>`,
+#   Task executes the commands listed under `cmds:`. Unlike Make, Task does
+#   not treat task names as filenames — no `.PHONY` needed.
+#
+# KEY DIFFERENCES FROM MAKE:
+#   - YAML syntax instead of tab-indented shell
+#   - `dir:` sets the working directory per-task (no `cd foo && ...`)
+#   - `vars:` defines reusable variables with clean {{.VAR}} syntax
+#   - `task --list` gives you a help menu automatically (no grep/awk needed)
+# -----------------------------------------------------------------
+
+version: "3"
+
+# `vars:` defines variables available to all tasks in this file.
+# {{.VAR_NAME}} is the template syntax to reference them.
+vars:
+  # COMPOSE_FILE is the path to our docker-compose file, relative to
+  # the repo root where Taskfile.yml lives.
+  COMPOSE_FILE: infra/docker-compose.yml
+
+# `tasks:` is the map of all available tasks.
+tasks:
+
+  # The `default` task runs when you type bare `task` with no arguments —
+  # equivalent to .DEFAULT_GOAL in Make. We point it at the built-in list.
+  default:
+    desc: List all available tasks
+    cmds:
+      - task --list
+
+  dev:
+    desc: Start all services (postgres, pgadmin, app) with Docker Compose — rebuilds the app image
+    cmds:
+      - docker compose -f {{.COMPOSE_FILE}} up --build
+
+  down:
+    desc: Stop all running Docker Compose services and remove containers
+    cmds:
+      - docker compose -f {{.COMPOSE_FILE}} down
+
+  migrate-up:
+    desc: Run all pending database migrations (reads DATABASE_URL from monolith/.env)
+    # `dir:` sets the working directory for all cmds in this task.
+    # Equivalent to `cd monolith &&` in Make, but cleaner — each cmd
+    # runs from this directory automatically.
+    dir: monolith
+    cmds:
+      - go run ./cmd/migrate up
+
+  migrate-down:
+    desc: Roll back the most recent database migration
+    dir: monolith
+    cmds:
+      - go run ./cmd/migrate down
+
+  test:
+    desc: Run all Go tests in the monolith with verbose output
+    dir: monolith
+    cmds:
+      - go test ./... -v
+
+  build:
+    desc: Compile the monolith server binary to monolith/bin/server
+    dir: monolith
+    cmds:
+      - go build -o bin/server ./cmd/server
+
+  seed:
+    desc: Run the seed script to populate the database with test data
+    dir: monolith
+    cmds:
+      # The seed script lives outside the monolith module in scripts/,
+      # so we reference it with a relative path from the monolith directory.
+      - go run ../scripts/seed.go
+
+  deps:
+    desc: Tidy Go module dependencies (add missing, remove unused)
+    dir: monolith
+    cmds:
+      - go mod tidy

@@ -24,10 +24,10 @@
 help:
 	@echo "Ark8de-L33tBo4rd — Available Make targets:"
 	@echo ""
-	# Parse this Makefile for lines matching `## target: description`
-	# and format them into a clean two-column list.
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
-		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+	@# Parse this Makefile for lines matching `## target: description`
+	@# and format them into a clean two-column list.
+	@grep -E '^## [a-zA-Z_-]+:' $(MAKEFILE_LIST) \
+		| awk 'BEGIN {FS = "## |: "}; {printf "  \033[36m%-16s\033[0m %s\n", $$2, $$3}'
 	@echo ""
 
 # DOCKER_COMPOSE detects whether to use the v2 plugin (docker compose)
@@ -45,8 +45,8 @@ down:
 
 ## migrate-up: Run all pending database migrations (reads DATABASE_URL from env or .env)
 migrate-up:
-	# Load .env if it exists, then run the migrate tool from the monolith directory.
-	# The migrate tool reads DATABASE_URL from the environment.
+	@# Load .env if it exists, then run the migrate tool from the monolith directory.
+	@# The migrate tool reads DATABASE_URL from the environment.
 	cd monolith && go run ./cmd/migrate up
 
 ## migrate-down: Roll back the most recent database migration
@@ -63,8 +63,8 @@ build:
 
 ## seed: Run the seed script to populate the database with test data
 seed:
-	# The seed script lives outside the monolith module in scripts/,
-	# so we reference it with a relative path from the monolith directory.
+	@# The seed script lives outside the monolith module in scripts/,
+	@# so we reference it with a relative path from the monolith directory.
 	cd monolith && go run ../scripts/seed.go
 
 ## deps: Tidy Go module dependencies (add missing, remove unused)

@@ -63,7 +63,7 @@ services:
     environment:
       # Default admin credentials for the pgAdmin web UI.
       # These are dev-only credentials — pgAdmin itself is not exposed in production.
-      PGADMIN_DEFAULT_EMAIL: admin@ark8de.local
+      PGADMIN_DEFAULT_EMAIL: admin@ark8de.dev
       PGADMIN_DEFAULT_PASSWORD: admin
 
     ports:
@@ -71,6 +71,13 @@ services:
       # We map it to 5050 on the host to avoid conflicts.
       # Open http://localhost:5050 in your browser to access it.
       - "5050:80"
+
+    volumes:
+      # Named volume: persists pgAdmin's registered servers, preferences, and
+      # query history across container restarts and recreations.
+      # Without this, you'd have to re-register the postgres server every time
+      # the container is removed.
+      - pgadmin_data:/var/lib/pgadmin
 
     depends_on:
       postgres:
@@ -119,3 +126,6 @@ volumes:
   postgres_data:
     # This volume stores all PostgreSQL data files.
     # Data survives `docker compose down` but is wiped by `docker compose down -v`.
+  pgadmin_data:
+    # This volume stores pgAdmin's configuration: registered servers, saved
+    # queries, and preferences. Persists across container restarts.
