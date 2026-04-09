@@ -29,7 +29,9 @@ import (
 	"github.com/joho/godotenv"            // loads .env files into environment variables at startup
 
 	// --- Internal packages ---
-	"github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/db" // our database connection package
+	"github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/auth"       // auth package: register, login, JWT
+	"github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/db"         // our database connection package
+	authmw "github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/middleware" // JWT middleware — aliased to avoid collision with chi's middleware package
 )
 
 func main() {
@@ -78,6 +80,12 @@ func main() {
 		port = "8080"
 	}
 
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		slog.Error("JWT_SECRET environment variable is required but not set")
+		os.Exit(1)
+	}
+
 	// -----------------------------------------------------------------
 	// Step 4: Connect to the database
 	// -----------------------------------------------------------------
@@ -117,7 +125,17 @@ func main() {
 	r.Use(middleware.Recoverer) // catches panics and returns 500 instead of crashing the server
 
 	// -----------------------------------------------------------------
-	// Step 6: Register route handlers
+	// Step 6: Construct the dependency graph (repositories → services → handlers)
+	// -----------------------------------------------------------------
+	// We wire dependencies manually (no framework/DI container).
+	// The pattern is: repository needs the DB pool; service needs the repository;
+	// handler needs the service. We build from the bottom up.
+	authRepo := auth.NewPlayerRepository(pool)
+	authService := auth.NewAuthService(authRepo, jwtSecret)
+	authHandler := auth.NewAuthHandler(authService)
+
+	// -----------------------------------------------------------------
+	// Step 7: Register route handlers
 	// -----------------------------------------------------------------
 	// r.Get("/healthz", handler) registers an HTTP GET handler at /healthz.
 	// The second argument is a closure — an anonymous function defined inline.
@@ -147,8 +165,19 @@ func main() {
 		fmt.Fprint(w, "ok")
 	})
 
+	// Auth routes — public (no JWT required)
+	// r.Post registers an HTTP POST handler at the given path.
+	r.Post("/auth/register", authHandler.Register)
+	r.Post("/auth/login", authHandler.Login)
+
+	// Auth routes — protected (JWT required)
+	// r.With() creates a one-off middleware chain for a single route.
+	// authmw.Authenticate(jwtSecret) returns a middleware function that verifies
+	// the JWT in the Authorization header before the handler runs.
+	r.With(authmw.Authenticate(jwtSecret)).Get("/auth/me", authHandler.Me)
+
 	// -----------------------------------------------------------------
-	// Step 7: Start the HTTP server in a goroutine
+	// Step 8: Start the HTTP server in a goroutine
 	// -----------------------------------------------------------------
 	// A goroutine is a lightweight thread managed by the Go runtime.
 	// `go func() { ... }()` launches the function concurrently — it runs
@@ -183,7 +212,7 @@ func main() {
 	}()
 
 	// -----------------------------------------------------------------
-	// Step 8: Wait for shutdown signal, then gracefully shut down
+	// Step 9: Wait for shutdown signal, then gracefully shut down
 	// -----------------------------------------------------------------
 	// make(chan os.Signal, 1) creates a buffered channel of capacity 1.
 	// A channel is a typed conduit for passing values between goroutines.
