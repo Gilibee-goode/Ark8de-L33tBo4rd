@@ -24,8 +24,9 @@
 - [x] `docs/phase-1-complete.md` with diagrams
 
 ## Phase 2: Testing + CI
+- [x] Extract shared router into `internal/app/router.go` (used by both server and tests)
+- [x] Integration test suite with `httptest` + real PostgreSQL (55 test cases across 5 files)
 - [ ] Unit tests for all service layer functions
-- [ ] Integration tests with `httptest`
 - [ ] DB tests with `testcontainers-go`
 - [ ] GitHub Actions — `go vet`, `go test`, `golangci-lint`
 - [ ] Structured logging with `log/slog`
