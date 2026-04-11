@@ -1,0 +1,140 @@
+{{define "title"}}My Profile — Ark8de{{end}}
+
+{{define "content"}}
+<div class="page-header">
+    <h1>{{.Profile.Username}}</h1>
+    <p class="subtitle">
+        {{/* .Profile.ClassRole is *string — {{if .Profile.ClassRole}} is true when non-nil */}}
+        {{if .Profile.ClassRole}}
+            <span class="class-badge class-{{.Profile.ClassRole}}">{{.Profile.ClassRole}}</span>
+        {{else}}
+            No class selected yet
+        {{end}}
+    </p>
+</div>
+
+<div class="profile-grid">
+
+    <!-- Combat Stats -->
+    <div class="card">
+        <h2>Combat Stats</h2>
+        {{if .Stats.ClassRole}}
+        <div class="stat-grid">
+            <div class="stat-item">
+                <span class="stat-label">Health Points</span>
+                <span class="stat-value">{{.Stats.HealthPoints}}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Armor</span>
+                <span class="stat-value">{{.Stats.ArmorPoints}}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Skill Points</span>
+                <span class="stat-value">{{.Stats.SkillPointsRemaining}} / {{.Stats.SkillPointsTotal}}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Gear Points Used</span>
+                <span class="stat-value">{{.Stats.GearPointsUsed}}</span>
+            </div>
+        </div>
+        {{else}}
+        <p class="muted">Set your class to see combat stats.</p>
+        {{end}}
+    </div>
+
+    <!-- Kredit Balance -->
+    <div class="card">
+        <h2>Kredits</h2>
+        <div class="kredit-balance">{{.Kredits.Balance}} K</div>
+        {{if .Kredits.Transactions}}
+        <h3>Recent Transactions</h3>
+        <table class="transactions-table">
+            <thead>
+                <tr>
+                    <th>Amount</th>
+                    <th>Note</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody>
+            {{range .Kredits.Transactions}}
+                <tr>
+                    {{/* gt .Amount 0 is Go template for "greater than" — shows + sign for positive amounts */}}
+                    <td class="{{if gt .Amount 0}}kredit-positive{{else}}kredit-negative{{end}}">
+                        {{if gt .Amount 0}}+{{end}}{{.Amount}}
+                    </td>
+                    {{/* .Note is *string — {{if .Note}} checks for non-nil pointer */}}
+                    <td>{{if .Note}}{{.Note}}{{else}}<span class="muted">—</span>{{end}}</td>
+                    {{/* .CreatedAt.Format is a method call on time.Time.
+                         The layout string "2006-01-02" is Go's reference date in YYYY-MM-DD form.
+                         Go uses a specific reference time (Mon Jan 2 15:04:05 MST 2006) for formatting. */}}
+                    <td class="muted">{{.CreatedAt.Format "2006-01-02"}}</td>
+                </tr>
+            {{end}}
+            </tbody>
+        </table>
+        {{end}}
+    </div>
+
+    <!-- Skills -->
+    <div class="card">
+        <h2>Skills</h2>
+        {{if .Skills.AllocatedSkills}}
+        <p class="muted" style="margin-bottom: 0.75rem;">
+            {{.Skills.SkillPointsRemaining}} / {{.Skills.SkillPointsTotal}} skill points remaining
+        </p>
+        <ul class="skill-list">
+        {{range .Skills.AllocatedSkills}}
+            <li class="skill-item">
+                <div class="skill-header">
+                    <span class="skill-name">{{.Name}}</span>
+                    <span class="skill-cost">{{.CostSkillPoints}} SP</span>
+                </div>
+                <p class="skill-desc">{{.Description}}</p>
+            </li>
+        {{end}}
+        </ul>
+        {{else}}
+        <p class="muted">No skills allocated yet. Use the API to set your skills.</p>
+        {{end}}
+    </div>
+
+    <!-- Gear -->
+    <div class="card">
+        <h2>Gear</h2>
+        {{if .Gear.SelectedGear}}
+        <ul class="gear-list">
+        {{range .Gear.SelectedGear}}
+            <li class="gear-item">
+                <span class="gear-name">{{.Name}}</span>
+                <span class="gear-cost">{{.GearPointCost}} GP</span>
+            </li>
+        {{end}}
+        </ul>
+        <p class="gear-summary">
+            My total: <strong>{{.Gear.GearPointsUsedByMe}}</strong> gear points
+        </p>
+        {{else}}
+        <p class="muted">No gear selected yet. Use the API to set your gear.</p>
+        {{end}}
+
+        {{/* TeamGearPointsTotal is 0 when the player is not on a team */}}
+        {{if .Gear.TeamGearPointsTotal}}
+        <div class="gear-pool {{if .Gear.TeamGearPoolNegative}}gear-pool-negative{{else}}gear-pool-positive{{end}}"
+             style="margin-top: 1rem;">
+            <div class="gear-pool-bar">
+                Team pool:
+                <span class="gear-points-used">{{.Gear.TeamGearPointsUsed}}</span>
+                <span class="gear-points-total"> / {{.Gear.TeamGearPointsTotal}}</span>
+            </div>
+            {{if .Gear.TeamGearPoolNegative}}
+            <p class="gear-warning">Team is over budget!</p>
+            {{else}}
+            <p class="gear-ok">Team is within budget</p>
+            {{end}}
+        </div>
+        {{end}}
+    </div>
+
+</div>
+{{end}}

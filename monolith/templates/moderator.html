@@ -1,0 +1,161 @@
+{{define "title"}}Moderator Panel — Ark8de{{end}}
+
+{{define "content"}}
+<div class="page-header">
+    <h1>Moderator Panel</h1>
+    <p class="subtitle">Award Arkade Points and manage Kredits</p>
+</div>
+
+<div class="mod-grid">
+
+    <!-- Award Arkade Points -->
+    <div class="card">
+        <h2>Award Arkade Points</h2>
+        <p class="muted" style="margin-bottom: 1rem;">
+            Select a team and enter a delta. Positive = award, negative = deduct.
+        </p>
+        <div class="form-group">
+            <label for="team-select">Team</label>
+            <select id="team-select" class="form-control">
+                <option value="">— select a team —</option>
+                {{range .Teams}}
+                {{/* range loops over .Teams (a []*team.Team slice).
+                     Inside the loop, . is the current Team value. */}}
+                <option value="{{.ID}}">{{.Name}} [{{.Tag}}] — {{.ArkadePoints}} pts</option>
+                {{end}}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="delta-input">Points Delta</label>
+            <input type="number" id="delta-input" class="form-control"
+                   placeholder="e.g. 10 or -5">
+        </div>
+        <div class="form-group">
+            <label for="reason-input">Reason</label>
+            <input type="text" id="reason-input" class="form-control"
+                   placeholder="e.g. Won round 3">
+        </div>
+        <button class="btn" onclick="submitPoints()">Award Points</button>
+        <div id="points-result" class="form-result"></div>
+    </div>
+
+    <!-- Grant Kredits -->
+    <div class="card">
+        <h2>Grant Kredits</h2>
+        <p class="muted" style="margin-bottom: 1rem;">
+            Grant Kredits to a player. Enter their Player UUID (visible in the API response for /auth/me).
+        </p>
+        <div class="form-group">
+            <label for="player-id-input">Player ID (UUID)</label>
+            <input type="text" id="player-id-input" class="form-control"
+                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+        </div>
+        <div class="form-group">
+            <label for="amount-input">Amount</label>
+            <input type="number" id="amount-input" class="form-control"
+                   placeholder="e.g. 100">
+        </div>
+        <div class="form-group">
+            <label for="note-input">Note (optional)</label>
+            <input type="text" id="note-input" class="form-control"
+                   placeholder="e.g. Event participation bonus">
+        </div>
+        <button class="btn" onclick="submitKredits()">Grant Kredits</button>
+        <div id="kredits-result" class="form-result"></div>
+    </div>
+
+</div>
+
+<script>
+// This page uses the Fetch API (built into all modern browsers) to call the
+// JSON API endpoints. The moderator's JWT token must be stored in localStorage
+// under the key 'ark8de_token' — log in via POST /auth/login and store the token.
+
+// getToken reads the JWT token from localStorage.
+// localStorage is a browser API for persisting small pieces of data (like tokens)
+// across page refreshes, but not across browser sessions.
+function getToken() {
+    return localStorage.getItem('ark8de_token') || '';
+}
+
+// submitPoints sends a PUT request to the team points API.
+function submitPoints() {
+    var teamId = document.getElementById('team-select').value;
+    var delta = parseInt(document.getElementById('delta-input').value, 10);
+    var reason = document.getElementById('reason-input').value;
+    var resultEl = document.getElementById('points-result');
+
+    if (!teamId || isNaN(delta)) {
+        resultEl.textContent = 'Please select a team and enter a numeric delta.';
+        resultEl.className = 'form-result error';
+        return;
+    }
+
+    // fetch() sends an HTTP request and returns a Promise.
+    // A Promise represents a value that will be available in the future —
+    // .then() runs when it resolves, .catch() runs if it fails.
+    fetch('/api/teams/' + teamId + '/points', {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            // The API requires a Bearer token in the Authorization header.
+            'Authorization': 'Bearer ' + getToken()
+        },
+        body: JSON.stringify({ delta: delta, reason: reason })
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+        if (data.error) {
+            resultEl.textContent = 'Error: ' + data.error;
+            resultEl.className = 'form-result error';
+        } else {
+            resultEl.textContent = 'Points updated! Reloading...';
+            resultEl.className = 'form-result success';
+            // Reload after 1.5 seconds so the team list shows updated points.
+            setTimeout(function() { location.reload(); }, 1500);
+        }
+    })
+    .catch(function(err) {
+        resultEl.textContent = 'Request failed: ' + err;
+        resultEl.className = 'form-result error';
+    });
+}
+
+// submitKredits sends a POST request to the player kredits API.
+function submitKredits() {
+    var playerId = document.getElementById('player-id-input').value;
+    var amount = parseInt(document.getElementById('amount-input').value, 10);
+    var note = document.getElementById('note-input').value;
+    var resultEl = document.getElementById('kredits-result');
+
+    if (!playerId || isNaN(amount)) {
+        resultEl.textContent = 'Please enter a player ID and numeric amount.';
+        resultEl.className = 'form-result error';
+        return;
+    }
+
+    fetch('/api/players/' + playerId + '/kredits', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + getToken()
+        },
+        body: JSON.stringify({ amount: amount, note: note })
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+        if (data.error) {
+            resultEl.textContent = 'Error: ' + data.error;
+            resultEl.className = 'form-result error';
+        } else {
+            resultEl.textContent = 'Kredits granted successfully!';
+            resultEl.className = 'form-result success';
+        }
+    })
+    .catch(function(err) {
+        resultEl.textContent = 'Request failed: ' + err;
+        resultEl.className = 'form-result error';
+    });
+}
+</script>
+{{end}}

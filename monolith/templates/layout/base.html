@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{block "title" .}}Ark8de Leaderboard{{end}}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <!--
+        htmx lets us make HTTP requests and update parts of the page without
+        writing any JavaScript. A simple hx-get="..." hx-target="#result"
+        on a button is all we need for dynamic updates.
+    -->
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="nav-brand">⚔️ Ark8de Leaderboard</a>
+        <div class="nav-links">
+            <a href="/">Leaderboard</a>
+            <a href="/profile">My Profile</a>
+        </div>
+    </nav>
+
+    <main class="container">
+        {{block "content" .}}{{end}}
+    </main>
+
+    <footer class="footer">
+        <p>Ark8de — Phase 1 Monolith</p>
+    </footer>
+</body>
+</html>

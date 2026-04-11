@@ -1,0 +1,600 @@
+/* =========================================================
+   Ark8de Leaderboard — Global Styles
+   Dark theme with purple accent colours to match the arcade vibe.
+
+   HOW TO READ THIS FILE:
+   - Selectors (.class, #id, element) target HTML elements
+   - Properties define appearance (color, font-size, display)
+   - Values assign the property (color: #fff)
+   - Custom properties (--name: value) are CSS variables — defined once,
+     reused everywhere via var(--name). Change one value to retheme the app.
+   ========================================================= */
+
+/* -------------------------------------------------------
+   CSS Custom Properties (variables)
+   Defined on :root (the <html> element) so they're available everywhere.
+   ------------------------------------------------------- */
+:root {
+  --bg-primary:    #0d0f14;  /* page background — very dark navy */
+  --bg-card:       #161a24;  /* card/panel background */
+  --bg-nav:        #0a0c10;  /* navbar — darkest layer */
+  --border:        #2a2f3e;  /* subtle borders between elements */
+  --text-primary:  #e8eaf0;  /* main text — off-white */
+  --text-muted:    #6b7280;  /* secondary/hint text */
+  --accent:        #7c3aed;  /* purple accent — buttons, links */
+  --accent-hover:  #6d28d9;  /* darker purple for hover states */
+  --gold:          #f59e0b;  /* 1st place / Kredit balance colour */
+  --silver:        #9ca3af;  /* 2nd place colour */
+  --bronze:        #b45309;  /* 3rd place colour */
+  --success:       #10b981;  /* gear within budget / positive amount */
+  --danger:        #ef4444;  /* gear over budget / error / negative */
+  --class-tank:    #3b82f6;  /* tank class — blue */
+  --class-dps:     #ef4444;  /* dps class — red */
+  --class-healer:  #10b981;  /* healer class — green */
+  --class-support: #f59e0b;  /* support class — amber */
+}
+
+/* -------------------------------------------------------
+   Reset & Base
+   ------------------------------------------------------- */
+
+/* box-sizing: border-box makes width/height include padding and border.
+   Without this, padding is added ON TOP of the declared width, which
+   is confusing. border-box is the standard modern reset. */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  line-height: 1.6;
+  min-height: 100vh;    /* fill the viewport height */
+  display: flex;
+  flex-direction: column; /* stack navbar → main → footer vertically */
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* -------------------------------------------------------
+   Navigation Bar
+   ------------------------------------------------------- */
+
+.navbar {
+  background-color: var(--bg-nav);
+  border-bottom: 1px solid var(--border);
+  padding: 0 2rem;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* sticky + top:0 keeps the nav visible as you scroll down the page */
+  position: sticky;
+  top: 0;
+  z-index: 100; /* above all other content */
+}
+
+.nav-brand {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+
+.nav-links {
+  display: flex;
+  gap: 1.5rem; /* gap adds space between flex children — cleaner than margins */
+}
+
+.nav-links a {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  transition: color 0.15s; /* smooth colour change on hover */
+}
+
+.nav-links a:hover {
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+/* -------------------------------------------------------
+   Main Content Container
+   ------------------------------------------------------- */
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;      /* centres the container horizontally */
+  padding: 2rem 1.5rem;
+  flex: 1;             /* flex: 1 makes this grow to fill available space,
+                          pushing the footer to the bottom of the page */
+}
+
+/* -------------------------------------------------------
+   Page Header
+   ------------------------------------------------------- */
+
+.page-header {
+  margin-bottom: 2rem;
+}
+
+.page-header h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.subtitle {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  margin-top: 0.2rem;
+}
+
+/* -------------------------------------------------------
+   Footer
+   ------------------------------------------------------- */
+
+.footer {
+  text-align: center;
+  padding: 1.5rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* -------------------------------------------------------
+   Leaderboard Table
+   ------------------------------------------------------- */
+
+.leaderboard-table {
+  width: 100%;
+  overflow-x: auto; /* scroll horizontally on narrow screens instead of breaking */
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse; /* removes double-borders between adjacent cells */
+}
+
+thead th {
+  background-color: var(--bg-card);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 2px solid var(--border);
+}
+
+.leaderboard-row {
+  border-bottom: 1px solid var(--border);
+  transition: background-color 0.1s;
+}
+
+.leaderboard-row:hover {
+  background-color: var(--bg-card);
+}
+
+.leaderboard-row td {
+  padding: 1rem;
+  vertical-align: middle;
+}
+
+/* Top-3 rows get a coloured left border as a visual accent */
+.rank-first  { border-left: 4px solid var(--gold);   }
+.rank-second { border-left: 4px solid var(--silver); }
+.rank-third  { border-left: 4px solid var(--bronze); }
+
+.rank-cell {
+  font-size: 1.2rem;
+  min-width: 60px;
+}
+
+.team-name {
+  font-weight: 600;
+}
+
+.points {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--accent);
+}
+
+/* -------------------------------------------------------
+   Tags  (short team identifier like [ARK])
+   ------------------------------------------------------- */
+
+.tag {
+  display: inline-block;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+/* -------------------------------------------------------
+   Badges  (e.g. "Locked In" status)
+   ------------------------------------------------------- */
+
+.badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 99px; /* large radius = pill shape */
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-locked {
+  background-color: rgba(124, 58, 237, 0.15);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+/* -------------------------------------------------------
+   Class Badges  (tank / dps / healer / support)
+   ------------------------------------------------------- */
+
+.class-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: capitalize; /* "tank" → "Tank" in display */
+}
+
+/* Each class gets its own colour scheme — bg is a semi-transparent tint */
+.class-tank    { background-color: rgba(59,130,246,0.15); color: var(--class-tank);    border: 1px solid var(--class-tank);    }
+.class-dps     { background-color: rgba(239,68,68,0.15);  color: var(--class-dps);     border: 1px solid var(--class-dps);     }
+.class-healer  { background-color: rgba(16,185,129,0.15); color: var(--class-healer);  border: 1px solid var(--class-healer);  }
+.class-support { background-color: rgba(245,158,11,0.15); color: var(--class-support); border: 1px solid var(--class-support); }
+
+/* -------------------------------------------------------
+   Buttons
+   ------------------------------------------------------- */
+
+.btn {
+  display: inline-block;
+  background-color: var(--accent);
+  color: #fff;
+  padding: 0.5rem 1.25rem;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  text-decoration: none;
+}
+
+.btn:hover {
+  background-color: var(--accent-hover);
+  text-decoration: none;
+  color: #fff;
+}
+
+.btn-sm {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.82rem;
+}
+
+/* -------------------------------------------------------
+   Cards  (white-box sections on a page)
+   ------------------------------------------------------- */
+
+.card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.card h2 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.card h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 1rem 0 0.5rem;
+  color: var(--text-muted);
+}
+
+/* -------------------------------------------------------
+   Grid Layouts
+   ------------------------------------------------------- */
+
+/* Two-column grid used by team-detail, profile, and moderator pages.
+   gap adds space between the columns and rows. */
+.team-detail-grid,
+.profile-grid,
+.mod-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr; /* two equal-width columns */
+  gap: 1.5rem;
+}
+
+/* On small screens, collapse to single column.
+   @media is a "media query" — CSS that only applies under certain conditions.
+   max-width: 768px means "when the viewport is narrower than 768px". */
+@media (max-width: 768px) {
+  .team-detail-grid,
+  .profile-grid,
+  .mod-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* -------------------------------------------------------
+   Empty State
+   ------------------------------------------------------- */
+
+.empty-state {
+  text-align: center;
+  padding: 4rem 2rem;
+  color: var(--text-muted);
+}
+
+/* -------------------------------------------------------
+   Muted Text
+   ------------------------------------------------------- */
+
+.muted {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* -------------------------------------------------------
+   Gear Pool Display
+   ------------------------------------------------------- */
+
+.gear-pool {
+  padding: 1rem;
+  border-radius: 8px;
+  margin-top: 0.5rem;
+}
+
+.gear-pool-positive {
+  background-color: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.gear-pool-negative {
+  background-color: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.gear-pool-bar {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin-bottom: 0.4rem;
+}
+
+.gear-points-used   { color: var(--text-primary); }
+.gear-points-total  { color: var(--text-muted); }
+
+.gear-points-label {
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.gear-warning {
+  color: var(--danger);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.gear-ok {
+  color: var(--success);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+/* -------------------------------------------------------
+   Stat Grid (profile page — HP, armor, SP, gear)
+   ------------------------------------------------------- */
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.stat-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* -------------------------------------------------------
+   Skill List (profile page)
+   ------------------------------------------------------- */
+
+.skill-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.skill-item {
+  padding: 0.75rem;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.skill-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.25rem;
+}
+
+.skill-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.skill-cost {
+  font-size: 0.8rem;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.skill-desc {
+  font-size: 0.84rem;
+  color: var(--text-muted);
+}
+
+/* -------------------------------------------------------
+   Gear List (profile page)
+   ------------------------------------------------------- */
+
+.gear-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.gear-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.gear-name { font-weight: 500; }
+.gear-cost { font-size: 0.8rem; color: var(--text-muted); }
+
+.gear-summary {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-top: 0.5rem;
+}
+
+/* -------------------------------------------------------
+   Kredit Balance (profile page)
+   ------------------------------------------------------- */
+
+.kredit-balance {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--gold);
+  margin-bottom: 1rem;
+}
+
+.kredit-positive {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.kredit-negative {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.transactions-table td {
+  padding: 0.5rem 0.5rem;
+  font-size: 0.88rem;
+  border-bottom: 1px solid var(--border);
+}
+
+/* -------------------------------------------------------
+   Forms (moderator panel)
+   ------------------------------------------------------- */
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group label {
+  display: block;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.form-control {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  transition: border-color 0.15s;
+  appearance: auto; /* keeps native select/input styling on some browsers */
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* The result area below each form button — hidden until there's a result */
+.form-result {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  min-height: 2.5rem; /* reserve space so the layout doesn't jump */
+}
+
+.form-result.success {
+  background-color: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: var(--success);
+}
+
+.form-result.error {
+  background-color: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: var(--danger);
+}

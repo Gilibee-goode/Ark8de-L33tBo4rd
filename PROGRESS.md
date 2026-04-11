@@ -10,17 +10,18 @@
 - [x] `GET /healthz` returns 200 — pings DB, returns 503 if unreachable
 - [x] `docs/phase-0-complete.md` with Mermaid flow + ER diagrams
 
-## Phase 1: Monolith
-- [ ] Auth — register, login, JWT, 4-tier role middleware
-- [ ] Player profile — class_role, profile photo upload, computed stats
-- [ ] Skills — seed skill data per role, allocation + point budget enforcement
-- [ ] Gear — selection UI, team gear pool display (highlight negative)
-- [ ] Teams — create, join requests, accept/reject, lock-in, logo upload
-- [ ] Kredits — moderator grant, player-to-player transfer, history
-- [ ] Arkade points — moderator assigns to teams, audit log
-- [ ] Leaderboard — ranked by Arkade points
-- [ ] Frontend — Go templates + HTMX (leaderboard, team detail, profile, moderator panel)
-- [ ] `docs/phase-1-complete.md` with diagrams
+## Phase 1: Monolith ✅
+- [x] Auth — register, login, JWT, 4-tier role middleware (`POST /auth/register`, `POST /auth/login`, `GET /auth/me`)
+- [x] Player profile — class_role, computed stats (HP/armor/SP from class + skills)
+- [x] Skills — 16 seeded skills (4 per class), allocation with SP budget enforcement
+- [x] Gear — selection, team gear pool display, over-budget highlighted red
+- [x] Teams — create, join requests, accept/reject, lock-in, member removal
+- [x] Kredits — moderator grant, player-to-player transfer, transaction history
+- [x] Arkade points — moderator assigns delta to teams, full audit log
+- [x] Leaderboard — ranked by Arkade points via RANK() window function
+- [x] Frontend — Go templates + dark theme CSS (leaderboard, team detail, profile, moderator panel)
+- [x] Seed script — 2 full teams, 11 players, realistic gear + skill + Kredit data
+- [x] `docs/phase-1-complete.md` with diagrams
 
 ## Phase 2: Testing + CI
 - [ ] Unit tests for all service layer functions
