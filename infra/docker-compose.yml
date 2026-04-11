@@ -65,6 +65,10 @@ services:
       # These are dev-only credentials — pgAdmin itself is not exposed in production.
       PGADMIN_DEFAULT_EMAIL: admin@ark8de.dev
       PGADMIN_DEFAULT_PASSWORD: admin
+      # PGADMIN_REPLACE_SERVERS_ON_STARTUP forces pgAdmin to re-read servers.json
+      # on every container start, not just the first time. Without this, the server
+      # registration from servers.json is only loaded once when the volume is created.
+      PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
 
     ports:
       # pgAdmin's web UI runs on port 80 inside the container.
@@ -73,11 +77,13 @@ services:
       - "5050:80"
 
     volumes:
-      # Named volume: persists pgAdmin's registered servers, preferences, and
-      # query history across container restarts and recreations.
-      # Without this, you'd have to re-register the postgres server every time
-      # the container is removed.
+      # Named volume: persists pgAdmin's preferences and query history.
       - pgadmin_data:/var/lib/pgadmin
+      # servers.json is read by pgAdmin on every startup to pre-register servers.
+      # This means the postgres server appears automatically — no manual setup needed,
+      # even after a full `docker compose down -v`.
+      # :ro mounts the file as read-only — pgAdmin reads it but should never modify it.
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
 
     depends_on:
       postgres:
@@ -110,6 +116,9 @@ services:
       # so "postgres" resolves to the postgres container's IP address.
       DATABASE_URL: postgres://ark8de:ark8de_dev@postgres:5432/ark8de?sslmode=disable
       PORT: "8080"
+      # JWT_SECRET signs and verifies JWT tokens. Use a long random value in production.
+      # Generate one with: openssl rand -base64 32
+      JWT_SECRET: local-dev-secret-change-me-in-production
 
     depends_on:
       postgres:
