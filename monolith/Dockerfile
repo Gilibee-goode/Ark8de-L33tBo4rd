@@ -91,9 +91,20 @@ RUN apk add --no-cache ca-certificates
 #   This is a standard security practice for production container images.
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
+# Set the working directory for the runtime container.
+# All paths that the server resolves at runtime (e.g. "templates/", "static/")
+# are relative to this directory.
+WORKDIR /app
+
 # Copy the compiled binary from the builder stage.
 # --from=builder refers to the stage named "builder" above.
 COPY --from=builder /build/bin/server /app/server
+
+# Copy the HTML templates and static assets.
+# These are NOT compiled into the binary — they are read from disk at request time.
+# Without this, the frontend pages would fail with "template parse failed".
+COPY --from=builder /build/templates /app/templates
+COPY --from=builder /build/static    /app/static
 
 # Switch to the non-root user for all subsequent RUN/CMD/ENTRYPOINT.
 USER appuser
