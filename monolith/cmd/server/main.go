@@ -15,28 +15,21 @@ package main
 
 import (
 	// --- Standard library ---
-	"context"       // Context for cancellation and deadlines — used for graceful shutdown and DB ping
-	"fmt"           // string formatting — used to build error messages and the listen address
-	"log/slog"      // structured logging (Go 1.21+) — outputs key=value pairs, easy to parse in production
-	"net/http"      // the Go standard HTTP server and handler interfaces
-	"os"            // access to environment variables and OS signals
-	"os/signal"     // lets us listen for OS signals like Ctrl+C (SIGINT) or Docker's SIGTERM
-	"syscall"       // provides the signal constants SIGINT and SIGTERM
-	"time"          // used for server timeouts and the graceful shutdown deadline
+	"context"    // Context for cancellation and deadlines — used for graceful shutdown and DB ping
+	"fmt"        // string formatting — used to build error messages and the listen address
+	"log/slog"   // structured logging (Go 1.21+) — outputs key=value pairs, easy to parse in production
+	"net/http"   // the Go standard HTTP server and handler interfaces
+	"os"         // access to environment variables and OS signals
+	"os/signal"  // lets us listen for OS signals like Ctrl+C (SIGINT) or Docker's SIGTERM
+	"syscall"    // provides the signal constants SIGINT and SIGTERM
+	"time"       // used for server timeouts and the graceful shutdown deadline
 
 	// --- Third-party ---
-	"github.com/go-chi/chi/v5"            // HTTP router — idiomatic Go, uses standard net/http interfaces
-	"github.com/go-chi/chi/v5/middleware" // chi's built-in middleware: request IDs, logging, panic recovery
-	"github.com/joho/godotenv"            // loads .env files into environment variables at startup
+	"github.com/joho/godotenv" // loads .env files into environment variables at startup
 
 	// --- Internal packages ---
-	"github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/auth"        // auth package: register, login, JWT
-	"github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/db"           // database connection pool wrapper
-	"github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/frontend"     // server-rendered HTML pages
-	"github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/leaderboard"  // read-only leaderboard API
-	authmw "github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/middleware" // JWT middleware — aliased to avoid collision with chi's middleware package
-	"github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/player"       // player profile, skills, gear, kredits
-	"github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/team"         // team management and join requests
+	"github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/app" // shared router builder — used by both server and tests
+	"github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/db"  // database connection pool wrapper
 )
 
 func main() {
@@ -108,189 +101,19 @@ func main() {
 	slog.Info("connected to PostgreSQL")
 
 	// -----------------------------------------------------------------
-	// Step 5: Build the dependency graph (repos → services → handlers)
+	// Step 5: Build the HTTP router with all routes and handlers
 	// -----------------------------------------------------------------
-	// We wire dependencies manually — no DI framework needed for this size.
-	// The pattern is always: repository needs the DB pool; service needs the
-	// repository; handler needs the service. Build from the bottom up.
-
-	// Auth
-	authRepo := auth.NewPlayerRepository(pool)
-	authService := auth.NewAuthService(authRepo, jwtSecret)
-	authHandler := auth.NewAuthHandler(authService)
-
-	// Player
-	playerRepo := player.NewPlayerRepository(pool)
-	playerService := player.NewPlayerService(playerRepo)
-	playerHandler := player.NewPlayerHandler(playerService)
-
-	// Team
-	teamRepo := team.NewTeamRepository(pool)
-	teamService := team.NewTeamService(teamRepo)
-	teamHandler := team.NewTeamHandler(teamService)
-
-	// Leaderboard
-	leaderboardRepo := leaderboard.NewLeaderboardRepository(pool)
-	leaderboardService := leaderboard.NewLeaderboardService(leaderboardRepo)
-	leaderboardHandler := leaderboard.NewLeaderboardHandler(leaderboardService)
-
-	// Frontend (server-rendered HTML pages)
+	// app.BuildRouter is a shared function that wires up the entire
+	// dependency graph (repos → services → handlers) and registers all
+	// routes. We extracted it into internal/app/ so that both the server
+	// and the integration test suite use the exact same router config.
+	//
 	// "templates" is the path to the templates/ folder, relative to the
 	// monolith/ directory (which is where the server runs from).
-	frontendHandler := frontend.NewFrontendHandler(
-		leaderboardService,
-		teamService,
-		playerService,
-		"templates",
-	)
+	r := app.BuildRouter(pool, jwtSecret, "templates")
 
 	// -----------------------------------------------------------------
-	// Step 6: Build the HTTP router and register routes
-	// -----------------------------------------------------------------
-	// chi.NewRouter() creates a new router. In Go, a router implements
-	// the http.Handler interface — it has a ServeHTTP(w, r) method that
-	// the HTTP server calls for every incoming request.
-	r := chi.NewRouter()
-
-	// Global middleware runs before every request handler, in the order registered.
-	// chi middleware is just a function that wraps http.Handler — idiomatic Go
-	// design that doesn't require learning a framework API.
-	r.Use(middleware.RequestID) // adds a unique X-Request-Id header to every request
-	r.Use(middleware.Logger)    // logs method, path, status code, and duration
-	r.Use(middleware.Recoverer) // catches panics and returns 500 instead of crashing
-
-	// ---- Static files (CSS, images, etc.) ----
-	// http.FileServer serves files from the local filesystem.
-	// http.StripPrefix removes the "/static" prefix before the file server
-	// looks up the file — so a request for /static/style.css becomes style.css
-	// in the static/ directory.
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
-
-	// ---- Health check ----
-	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		// Create a context with a 5-second deadline for the DB ping.
-		// If the ping takes longer, the context is cancelled and Ping() returns an error.
-		pingCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		// defer cancel() releases resources associated with this context.
-		// Always cancel a timeout context — not doing so leaks goroutines.
-		defer cancel()
-
-		if err := pool.Ping(pingCtx); err != nil {
-			slog.Error("healthz: database ping failed", "error", err)
-			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprint(w, "database unreachable")
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "ok")
-	})
-
-	// ======================================================================
-	// Frontend HTML pages (server-rendered — returns HTML, not JSON)
-	// ======================================================================
-
-	// GET / — public leaderboard page
-	r.Get("/", frontendHandler.Leaderboard)
-
-	// GET /teams/{id} — public team detail page
-	r.Get("/teams/{id}", frontendHandler.TeamDetail)
-
-	// GET /profile — authenticated player's own profile page
-	// r.With() creates a per-route middleware chain.
-	// authmw.Authenticate verifies the JWT before the handler runs.
-	r.With(authmw.Authenticate(jwtSecret)).Get("/profile", frontendHandler.Profile)
-
-	// GET /mod — moderator action panel (moderator or admin only)
-	// RequireRole must come AFTER Authenticate — it reads the role that
-	// Authenticate stored in the context.
-	r.With(
-		authmw.Authenticate(jwtSecret),
-		authmw.RequireRole("moderator", "admin"),
-	).Get("/mod", frontendHandler.ModeratorPanel)
-
-	// ======================================================================
-	// Auth API  (returns JSON)
-	// ======================================================================
-
-	r.Post("/auth/register", authHandler.Register)
-	r.Post("/auth/login", authHandler.Login)
-	r.With(authmw.Authenticate(jwtSecret)).Get("/auth/me", authHandler.Me)
-
-	// ======================================================================
-	// Leaderboard API  (returns JSON)
-	// ======================================================================
-
-	// GET /api/leaderboard — all teams in ranked order
-	r.Get("/api/leaderboard", leaderboardHandler.GetLeaderboard)
-	// GET /api/leaderboard/teams/{id} — one team's leaderboard card
-	r.Get("/api/leaderboard/teams/{id}", leaderboardHandler.GetTeamCard)
-
-	// ======================================================================
-	// Team API  (returns JSON)
-	// ======================================================================
-
-	// r.Route groups routes under a common path prefix.
-	// All routes inside share the "/api/teams" prefix automatically.
-	r.Route("/api/teams", func(r chi.Router) {
-		// Public — no auth required
-		r.Get("/", teamHandler.ListTeams)     // GET /api/teams
-		r.Get("/{id}", teamHandler.GetTeam)   // GET /api/teams/{id}
-
-		// Authenticated — any logged-in player
-		r.With(authmw.Authenticate(jwtSecret)).Post("/", teamHandler.CreateTeam)
-		r.With(authmw.Authenticate(jwtSecret)).Put("/{id}", teamHandler.UpdateTeam)
-		r.With(authmw.Authenticate(jwtSecret)).Delete("/{id}", teamHandler.DeleteTeam)
-		r.With(authmw.Authenticate(jwtSecret)).Put("/{id}/lock", teamHandler.ToggleLock)
-		r.With(authmw.Authenticate(jwtSecret)).Delete("/{id}/members/{pid}", teamHandler.RemoveMember)
-		r.With(authmw.Authenticate(jwtSecret)).Post("/{id}/join-requests", teamHandler.SendJoinRequest)
-		r.With(authmw.Authenticate(jwtSecret)).Get("/{id}/join-requests", teamHandler.GetJoinRequests)
-		r.With(authmw.Authenticate(jwtSecret)).Put("/{id}/join-requests/{rid}", teamHandler.ResolveJoinRequest)
-		r.With(authmw.Authenticate(jwtSecret)).Put("/{id}/logo", teamHandler.UploadLogo)
-
-		// Moderator/admin only — Arkade point management
-		r.With(
-			authmw.Authenticate(jwtSecret),
-			authmw.RequireRole("moderator", "admin"),
-		).Put("/{id}/points", teamHandler.AddArkadePoints)
-
-		r.With(
-			authmw.Authenticate(jwtSecret),
-			authmw.RequireRole("moderator", "admin"),
-		).Get("/{id}/points/history", teamHandler.GetArkadePointHistory)
-	})
-
-	// ======================================================================
-	// Player API  (returns JSON)
-	// ======================================================================
-
-	// GET /api/skills — public list of all skills, optionally filtered by ?class_role=
-	r.Get("/api/skills", playerHandler.ListSkills)
-
-	r.Route("/api/players", func(r chi.Router) {
-		// Public — anyone can view a player's public profile
-		r.Get("/{id}", playerHandler.GetPublicProfile)
-
-		// Authenticated player's own operations
-		// NOTE: chi matches static path segments (like "me") before parameterised
-		// ones (like {id}), so /me/class routes are always preferred over /{id}/class.
-		r.With(authmw.Authenticate(jwtSecret)).Put("/me/class", playerHandler.SetClass)
-		r.With(authmw.Authenticate(jwtSecret)).Get("/me/stats", playerHandler.GetStats)
-		r.With(authmw.Authenticate(jwtSecret)).Get("/me/skills", playerHandler.GetSkills)
-		r.With(authmw.Authenticate(jwtSecret)).Put("/me/skills", playerHandler.SetSkills)
-		r.With(authmw.Authenticate(jwtSecret)).Get("/me/gear", playerHandler.GetGear)
-		r.With(authmw.Authenticate(jwtSecret)).Put("/me/gear", playerHandler.SetGear)
-		r.With(authmw.Authenticate(jwtSecret)).Get("/me/kredits", playerHandler.GetKredits)
-		r.With(authmw.Authenticate(jwtSecret)).Post("/me/kredits/transfer", playerHandler.TransferKredits)
-
-		// Moderator/admin — grant Kredits to any player by ID
-		r.With(
-			authmw.Authenticate(jwtSecret),
-			authmw.RequireRole("moderator", "admin"),
-		).Post("/{id}/kredits", playerHandler.GrantKredits)
-	})
-
-	// -----------------------------------------------------------------
-	// Step 7: Start the HTTP server in a goroutine
+	// Step 6: Start the HTTP server in a goroutine
 	// -----------------------------------------------------------------
 	// A goroutine is a lightweight thread managed by the Go runtime.
 	// `go func() { ... }()` launches the function concurrently — it runs
@@ -319,7 +142,7 @@ func main() {
 	}()
 
 	// -----------------------------------------------------------------
-	// Step 8: Wait for shutdown signal, then gracefully shut down
+	// Step 7: Wait for shutdown signal, then gracefully shut down
 	// -----------------------------------------------------------------
 	// make(chan os.Signal, 1) creates a buffered channel of capacity 1.
 	// A channel is a typed conduit for passing values between goroutines.
