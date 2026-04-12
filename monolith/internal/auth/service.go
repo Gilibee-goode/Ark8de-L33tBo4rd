@@ -65,13 +65,38 @@ var (
 	ErrInvalidEmail = errors.New("please provide a valid email address")
 )
 
+// Repository defines the data-access methods that AuthService needs.
+//
+// WHY AN INTERFACE?
+//   An interface in Go is a contract — a set of method signatures.
+//   Any type that has all of these methods automatically satisfies this interface.
+//   Go checks this at compile time, but you never write "implements Repository"
+//   like you would in Java — it's implicit (called "structural typing").
+//
+//   By depending on this interface instead of the concrete *PlayerRepository,
+//   the AuthService can work with any implementation:
+//     - The real PlayerRepository in production (talks to PostgreSQL)
+//     - A lightweight mock in unit tests (returns hardcoded data)
+//
+//   Go idiom: "accept interfaces, return structs."
+//   We define the interface HERE (in the consumer package) rather than in the
+//   repository package, because the consumer knows what it needs. This keeps
+//   the interface minimal — only the 3 methods this service actually calls.
+type Repository interface {
+	CreatePlayer(ctx context.Context, username, email, passwordHash string) (*Player, error)
+	GetByEmail(ctx context.Context, email string) (*Player, error)
+	GetByID(ctx context.Context, id string) (*Player, error)
+}
+
 // AuthService contains the business logic for authentication.
 // It sits between the HTTP handler (which deals with HTTP) and the repository
 // (which deals with the database). This separation makes each layer testable
 // independently — we can test business logic without a real DB or HTTP server.
 type AuthService struct {
 	// repo is the database layer. AuthService calls it to read and write player records.
-	repo *PlayerRepository
+	// The type is Repository (an interface), not *PlayerRepository (a concrete struct).
+	// This allows us to swap in a mock repository during unit tests.
+	repo Repository
 
 	// jwtSecret is the private key used to sign JWT tokens.
 	// It must be kept secret on the server — anyone with this key can forge valid tokens.
@@ -80,7 +105,11 @@ type AuthService struct {
 
 // NewAuthService creates and returns an AuthService.
 // Called once at startup (in main.go) with the shared repository and JWT secret.
-func NewAuthService(repo *PlayerRepository, jwtSecret string) *AuthService {
+//
+// The repo parameter is the Repository interface — in production, a *PlayerRepository
+// is passed in and satisfies this interface automatically (Go's structural typing).
+// In tests, a mock struct with the same methods is passed instead.
+func NewAuthService(repo Repository, jwtSecret string) *AuthService {
 	return &AuthService{repo: repo, jwtSecret: jwtSecret}
 }
 

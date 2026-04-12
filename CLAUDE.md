@@ -191,6 +191,57 @@ Seed credentials must be documented in a comment at the top of `scripts/seed.go`
 
 ---
 
+## Rule 8: Orient Before You Build
+
+Before starting any new task, read **PROGRESS.md** and **ARCHITECTURE.md** to understand:
+- What has already been built and what remains
+- Where the current work fits in the phased plan
+- Which packages, patterns, and conventions are already established
+
+Do not assume you know the state of the project. The codebase evolves across sessions,
+and these files are the source of truth for what exists and what's next. If either file
+is missing or outdated, flag it before proceeding.
+
+---
+
+## Rule 9: Every Change Gets Tests
+
+All new code must include tests before the work is considered complete:
+- **Service-layer business logic** → unit tests with hand-written mocks (see `internal/auth/service_test.go` for the pattern)
+- **New endpoints or middleware** → integration tests via `httptest` (see `tests/` directory)
+- **Bug fixes** → a test that reproduces the bug before the fix, proving it's resolved
+
+Run the full relevant test suite before declaring a task done:
+```bash
+# Unit tests (fast, no DB)
+cd monolith && go test ./internal/... -v
+
+# Integration tests (needs running PostgreSQL)
+cd monolith && go test ./tests/... -v
+```
+
+If existing tests break, fix them as part of the same task — never leave the suite red.
+
+---
+
+## Rule 10: Document as You Go, Not After
+
+Each completed segment of work must include:
+
+1. **PROGRESS.md updated** — tick the relevant checkbox, add a brief note if the scope changed
+2. **Documentation created or updated** — add to the relevant `docs/phase-N-*.md` file:
+   - What was built and why
+   - Mermaid diagrams if the architecture or data flow changed
+   - A table of new Go concepts introduced (one-line explanation each)
+   - What comes next
+3. **Code-level documentation** — follows Rules 1–3 (comments on functions, imports, Go concepts)
+
+Documentation is not a follow-up task. It ships with the code. If a phase milestone is
+reached (e.g. all Phase 2 checkboxes are done), create the `docs/phase-N-complete.md`
+summary per Rule 4.
+
+---
+
 ## Reminder: What This Project Is For
 
 This project exists to:

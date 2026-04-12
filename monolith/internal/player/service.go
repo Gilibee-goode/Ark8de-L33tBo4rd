@@ -40,13 +40,42 @@ var validClassRoles = map[string]bool{
 	"tank": true, "dps": true, "healer": true, "support": true,
 }
 
+// Repository defines the data-access methods that PlayerService needs.
+//
+// This interface lists every repository method the service calls. The concrete
+// *PlayerRepository satisfies it automatically via Go's structural typing —
+// no "implements" keyword needed. In unit tests, a mock struct with the same
+// methods is used instead, letting us test business logic without a database.
+//
+// See auth/service.go for a longer explanation of why we use interfaces here.
+type Repository interface {
+	GetPublicProfile(ctx context.Context, playerID string) (*PublicPlayerResponse, error)
+	UpdateClassRole(ctx context.Context, playerID, classRole string) error
+	GetPlayerCore(ctx context.Context, playerID string) (classRole *string, skillPointsTotal int, err error)
+	GetPlayerSkills(ctx context.Context, playerID string) ([]Skill, error)
+	GetPlayerGear(ctx context.Context, playerID string) ([]GearType, error)
+	GetTeamGearPointsUsed(ctx context.Context, playerID string) (teamTotal, teamUsed int, err error)
+	GetSkillsByIDs(ctx context.Context, ids []string) ([]Skill, error)
+	SetPlayerSkills(ctx context.Context, playerID string, skillIDs []string) error
+	GetGearTypesByIDs(ctx context.Context, ids []string) ([]GearType, error)
+	SetPlayerGear(ctx context.Context, playerID string, gearTypeIDs []string) error
+	GetKreditBalance(ctx context.Context, playerID string) (int, error)
+	GetKreditTransactions(ctx context.Context, playerID string) ([]KreditTransaction, error)
+	PlayerExists(ctx context.Context, playerID string) (bool, error)
+	GrantKredits(ctx context.Context, toPlayerID, createdBy string, amount int, note string) error
+	TransferKredits(ctx context.Context, fromPlayerID, toPlayerID, createdBy string, amount int, note string) error
+	GetSkillsByClass(ctx context.Context, classRole string) ([]Skill, error)
+}
+
 // PlayerService contains all business logic for player operations.
 type PlayerService struct {
-	repo *PlayerRepository
+	repo Repository
 }
 
 // NewPlayerService constructs a PlayerService.
-func NewPlayerService(repo *PlayerRepository) *PlayerService {
+// The repo parameter accepts the Repository interface — in production a
+// *PlayerRepository is passed in; in unit tests a mock is used instead.
+func NewPlayerService(repo Repository) *PlayerService {
 	return &PlayerService{repo: repo}
 }
 

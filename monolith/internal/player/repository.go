@@ -17,6 +17,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// Compile-time check: *PlayerRepository must satisfy the Repository interface.
+// See auth/repository.go for a detailed explanation of this pattern.
+var _ Repository = (*PlayerRepository)(nil)
+
 // PlayerRepository handles all DB access for the player package.
 type PlayerRepository struct {
 	db *pgxpool.Pool

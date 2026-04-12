@@ -26,7 +26,7 @@
 ## Phase 2: Testing + CI
 - [x] Extract shared router into `internal/app/router.go` (used by both server and tests)
 - [x] Integration test suite with `httptest` + real PostgreSQL (55 test cases across 5 files)
-- [ ] Unit tests for all service layer functions
+- [x] Unit tests for all service layer functions (66 tests across 3 files — auth, player, team)
 - [ ] DB tests with `testcontainers-go`
 - [ ] GitHub Actions — `go vet`, `go test`, `golangci-lint`
 - [ ] Structured logging with `log/slog`

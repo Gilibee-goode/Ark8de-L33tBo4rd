@@ -1,34 +1,122 @@
-# Phase 2 — Integration Test Suite
+# Phase 2 — Test Suite (Integration + Unit)
 
 ## What Was Built
 
-A comprehensive integration test suite that exercises every API endpoint and HTML page
-through the full application stack: HTTP request -> chi router -> handler -> service -> repository -> PostgreSQL.
+A two-layer test suite covering the entire application:
 
-**55 test cases** across **5 test files**, all using Go's standard `testing` package
-and `net/http/httptest` — no third-party test frameworks.
+1. **Integration tests** (55 tests) — exercise every API endpoint and HTML page through the full stack: HTTP request -> chi router -> handler -> service -> repository -> PostgreSQL.
+2. **Unit tests** (66 tests) — verify every service-layer business logic function in isolation using hand-written mocks, with no database required.
+
+**121 total test cases** across **8 test files**, all using Go's standard `testing` package — no third-party test frameworks.
 
 ---
 
-## Architecture Decision: Integration Tests, Not Unit Tests
+## Architecture: Two Layers of Testing
 
-The application's services accept concrete repository types, not interfaces:
+### Layer 1: Integration Tests (require PostgreSQL)
 
-```go
-// This is what we have — concrete types, no interfaces
-type PlayerService struct {
-    repo *PlayerRepository  // concrete, not an interface
-}
-```
-
-This means we **can't easily mock** repositories for unit testing. Instead of adding
-interfaces purely for testability, we chose full-stack integration tests that hit a
-real PostgreSQL database. This catches bugs that mocks would miss:
+Integration tests send real HTTP requests through the full middleware chain to a real
+database. They catch bugs that unit tests cannot:
 
 - SQL syntax errors and missing columns
 - Transaction isolation issues
 - Foreign key constraint violations
 - Middleware misconfiguration (wrong route, missing auth)
+
+### Layer 2: Unit Tests (no database needed)
+
+Unit tests verify business logic in isolation by injecting mock repositories. They are
+fast (< 2 seconds total), need no infrastructure, and test specific edge cases:
+
+- Input validation (weak password, invalid class role, bad team tag)
+- Authorization patterns (owner vs admin vs random player)
+- Error mapping (pgconn error codes -> sentinel errors)
+- Computation correctness (stat accumulation, skill budget enforcement)
+- Race condition guards (accept join request after player joined elsewhere)
+
+### Why Both Layers?
+
+Each layer catches different bugs. Unit tests are fast and precise but can't verify SQL
+or middleware. Integration tests are thorough but slow and need a running database.
+Together they provide high confidence with fast feedback.
+
+---
+
+## Interface Refactor (Enabling Unit Tests)
+
+To unit test services without a database, we introduced `Repository` interfaces:
+
+```go
+// Before: concrete type, can't mock
+type PlayerService struct {
+    repo *PlayerRepository
+}
+
+// After: interface, can inject mocks in tests
+type Repository interface {
+    GetPublicProfile(ctx context.Context, playerID string) (*PublicPlayerResponse, error)
+    UpdateClassRole(ctx context.Context, playerID, classRole string) error
+    // ... all methods the service calls
+}
+type PlayerService struct {
+    repo Repository  // interface, not concrete
+}
+```
+
+Go's **structural typing** means the concrete `*PlayerRepository` satisfies the new
+interface automatically — no `implements` keyword, no changes to callers, handlers,
+or integration tests. We also added compile-time checks in each `repository.go`:
+
+```go
+// This line fails to compile if *PlayerRepository is missing any Repository method.
+var _ Repository = (*PlayerRepository)(nil)
+```
+
+### Hand-Written Mock Pattern
+
+Each test file defines a `mockRepository` struct with function fields. Tests control
+exactly what each mock method returns:
+
+```go
+// The mock struct — one function field per interface method
+type mockRepository struct {
+    createPlayerFn func(ctx context.Context, username, email, hash string) (*Player, error)
+    getByEmailFn   func(ctx context.Context, email string) (*Player, error)
+    // ...
+}
+
+// Each method delegates to its function field
+func (m *mockRepository) CreatePlayer(ctx context.Context, u, e, h string) (*Player, error) {
+    return m.createPlayerFn(ctx, u, e, h)
+}
+
+// In a test, set up only the fields you need:
+mock := &mockRepository{
+    getByEmailFn: func(ctx context.Context, email string) (*Player, error) {
+        return nil, pgx.ErrNoRows  // simulate "email not found"
+    },
+}
+svc := NewAuthService(mock, "jwt-secret")
+```
+
+```mermaid
+flowchart LR
+    subgraph "Unit Test"
+        Test["Test Function"]
+        Mock["mockRepository<br/>(function fields)"]
+    end
+
+    subgraph "Service Under Test"
+        Service["AuthService /<br/>PlayerService /<br/>TeamService"]
+    end
+
+    Test -->|"1. Set mock.fn = ..."| Mock
+    Test -->|"2. Call svc.Method()"| Service
+    Service -->|"3. Calls repo.Method()"| Mock
+    Mock -->|"4. Returns test data"| Service
+    Service -->|"5. Returns result"| Test
+    Test -->|"6. Assert result"| Test
+```
 
 ---
 
@@ -159,36 +247,6 @@ own database pool and JWT secret. This guarantees tests exercise the real middle
 
 ---
 
-## How to Run
-
-```bash
-# 1. Start the database (if not already running)
-task dev
-
-# 2. Apply migrations (if not already applied)
-task migrate-up
-
-# 3. Run the test suite
-task test
-# or directly:
-cd monolith && go test ./tests/... -v
-```
-
-The tests connect to the same PostgreSQL instance as docker-compose dev
-(`postgres://ark8de:ark8de_dev@localhost:5432/ark8de`). They truncate data
-tables before running, so any seed data will be cleared.
-
-To run specific test groups:
-
-```bash
-cd monolith
-go test ./tests/... -v -run TestAuth        # only auth tests
-go test ./tests/... -v -run TestTeamLifecycle # only the lifecycle test
-go test ./tests/... -v -run TestPlayerSkills  # only skill allocation tests
-```
-
----
-
 ## Key Go Testing Concepts
 
 | Concept | Explanation |
@@ -201,18 +259,151 @@ go test ./tests/... -v -run TestPlayerSkills  # only skill allocation tests
 | `map[string]any` | Go's generic JSON object — `any` (alias for `interface{}`) holds any type; JSON numbers decode as `float64` |
 | `result["field"].(string)` | Type assertion — extracts a concrete type from an `any` value; panics if the type is wrong |
 | `-count=1` flag | Disables test result caching — Go caches passing tests by default, which can mask issues |
+| **Interfaces for testability** | Defining a `Repository` interface lets tests inject mock implementations without changing production code |
+| **Structural typing** | Go interfaces are satisfied implicitly — if a struct has the right methods, it implements the interface automatically |
+| **Function-field mocks** | A mock struct with `func` fields lets each test control what the mock returns, without a third-party library |
+| **`var _ Interface = (*Type)(nil)`** | Compile-time check that a concrete type satisfies an interface — fails to compile if any method is missing |
+| **`errors.Is(err, target)`** | Tests whether an error (or any error in its chain) matches a specific sentinel error |
+| **`errors.As(err, &target)`** | Extracts a specific error type from a chain — used to check `*pgconn.PgError` for PostgreSQL error codes |
+| **`bcrypt.MinCost`** | Uses minimum bcrypt work factor in tests for speed (~1ms vs ~100ms at DefaultCost) |
+
+---
+
+## Unit Test Files and Coverage
+
+### `internal/auth/service_test.go` — 11 tests
+
+| Test | What it verifies |
+|---|---|
+| `TestRegister_Success` | Input normalisation (trim whitespace, lowercase email), bcrypt hashing, JWT generation |
+| `TestRegister_InvalidUsername_TooShort` | Username under 3 chars rejected |
+| `TestRegister_InvalidUsername_BadChars` | Special characters in username rejected |
+| `TestRegister_InvalidEmail` | Missing @ rejected |
+| `TestRegister_WeakPassword_TooShort` | Under 8 chars rejected |
+| `TestRegister_WeakPassword_NoUppercase` | No uppercase letter rejected |
+| `TestRegister_DuplicateEmail` | pgconn error 23505 on email constraint -> `ErrEmailTaken` |
+| `TestRegister_DuplicateUsername` | pgconn error 23505 on username constraint -> `ErrUsernameTaken` |
+| `TestLogin_Success` | Correct password + JWT returned |
+| `TestLogin_WrongPassword` | Wrong password -> `ErrInvalidCredentials` (same as not found) |
+| `TestLogin_EmailNotFound` | `pgx.ErrNoRows` -> `ErrInvalidCredentials` (no email enumeration) |
+
+### `internal/player/service_test.go` — 22 tests
+
+| Test | What it verifies |
+|---|---|
+| `TestSetClass_ValidRole` | All 4 valid roles accepted |
+| `TestSetClass_InvalidRole` | "wizard" rejected with `ErrInvalidClassRole` |
+| `TestGetStats_NoClassSet` | Nil class -> zeroed HP/armor/SP |
+| `TestGetStats_WithSkillsAndGear` | Tank base (150 HP, 30 armor) + skill bonuses + gear point accumulation |
+| `TestSetSkills_Success` | Valid skills saved |
+| `TestSetSkills_NoClassSet` | Can't allocate skills without a class |
+| `TestSetSkills_SkillNotFound` | Missing skill ID -> `ErrSkillNotFound` |
+| `TestSetSkills_WrongClass` | Tank skill for DPS player -> `ErrSkillWrongClass` |
+| `TestSetSkills_BudgetExceeded` | Cost exceeds points -> `ErrInsufficientSkillPts` |
+| `TestSetSkills_EmptyListClearsAllocation` | Empty list clears all skills |
+| `TestSetGear_Success` | Valid gear saved |
+| `TestSetGear_GearNotFound` | Missing gear ID -> `ErrGearNotFound` |
+| `TestTransferKredits_Success` | Valid transfer between two players |
+| `TestTransferKredits_SelfTransfer` | Self-transfer -> `ErrCannotTransferToSelf` |
+| `TestTransferKredits_ZeroAmount` | Zero amount -> `ErrInvalidAmount` |
+| `TestTransferKredits_RecipientNotFound` | Non-existent player -> `ErrPlayerNotFound` |
+| `TestTransferKredits_InsufficientBalance` | pgconn error 23514 -> `ErrInsufficientKredits` |
+| `TestGrantKredits_Success` | Valid moderator grant |
+| `TestGrantKredits_ZeroAmount` | Zero amount -> `ErrInvalidAmount` |
+| `TestGrantKredits_PlayerNotFound` | Non-existent player -> `ErrPlayerNotFound` |
+| `TestGetAvailableSkills_ValidClass` | Returns skills for requested class |
+| `TestGetAvailableSkills_InvalidClass` | "wizard" -> `ErrInvalidClassRole` |
+
+### `internal/team/service_test.go` — 33 tests
+
+| Test | What it verifies |
+|---|---|
+| `TestCreateTeam_Success` | Name trimmed, tag uppercased |
+| `TestCreateTeam_NameTooShort` | Under 3 chars -> `ErrInvalidTeamName` |
+| `TestCreateTeam_InvalidTag` | Under 2 chars -> `ErrInvalidTag` |
+| `TestCreateTeam_TagWithSpecialChars` | Special chars -> `ErrInvalidTag` |
+| `TestCreateTeam_DuplicateName` | Constraint violation -> `ErrTeamNameTaken` |
+| `TestCreateTeam_DuplicateTag` | Constraint violation -> `ErrTagTaken` |
+| `TestUpdateTeam_OwnerSuccess` | Owner can update their team |
+| `TestUpdateTeam_AdminSuccess` | Admin can update any team |
+| `TestUpdateTeam_Forbidden` | Random player -> `ErrForbidden` |
+| `TestUpdateTeam_NotFound` | Missing team -> `ErrTeamNotFound` |
+| `TestDeleteTeam_OwnerSuccess` | Owner can delete their team |
+| `TestDeleteTeam_Forbidden` | Non-owner -> `ErrForbidden` |
+| `TestToggleLock_OwnerSuccess` | Toggle returns new lock state |
+| `TestToggleLock_Forbidden` | Non-owner -> `ErrForbidden` |
+| `TestRemoveMember_Success` | Owner removes member |
+| `TestRemoveMember_CannotRemoveOwner` | Owner can't remove themselves |
+| `TestRemoveMember_Forbidden` | Non-owner -> `ErrForbidden` |
+| `TestSendJoinRequest_Success` | Valid request created |
+| `TestSendJoinRequest_TeamLocked` | Locked team -> `ErrTeamLocked` |
+| `TestSendJoinRequest_AlreadyMember` | Already on a team -> `ErrAlreadyInTeam` |
+| `TestSendJoinRequest_AlreadyRequested` | Duplicate request -> `ErrAlreadyRequested` |
+| `TestResolveJoinRequest_AcceptSuccess` | Accept calls `AcceptJoinRequest` |
+| `TestResolveJoinRequest_RejectSuccess` | Reject calls `RejectJoinRequest` |
+| `TestResolveJoinRequest_InvalidAction` | "maybe" -> `ErrInvalidAction` |
+| `TestResolveJoinRequest_Forbidden` | Non-owner -> `ErrForbidden` |
+| `TestResolveJoinRequest_NotPending` | Already resolved -> `ErrRequestNotPending` |
+| `TestResolveJoinRequest_AcceptRaceGuard` | Player joined elsewhere -> auto-reject |
+| `TestAddArkadePoints_Success` | Valid point adjustment |
+| `TestAddArkadePoints_ZeroDelta` | Zero delta -> `ErrInvalidDelta` |
+| `TestAddArkadePoints_TeamNotFound` | Missing team -> `ErrTeamNotFound` |
+| `TestGetJoinRequests_OwnerSuccess` | Owner can view requests |
+| `TestGetJoinRequests_Forbidden` | Non-owner -> `ErrForbidden` |
+| `TestListTeams_ReturnsEmptySlice` | Nil from repo -> empty slice (JSON `[]` not `null`) |
+
+---
+
+## How to Run
+
+### Unit Tests (no database needed)
+
+```bash
+cd monolith
+
+# All unit tests (~2 seconds)
+go test ./internal/auth/... ./internal/player/... ./internal/team/... -v
+
+# Just one package
+go test ./internal/auth/... -v
+go test ./internal/player/... -v
+go test ./internal/team/... -v
+```
+
+### Integration Tests (requires PostgreSQL)
+
+```bash
+# 1. Start the database (if not already running)
+task dev
+
+# 2. Apply migrations (if not already applied)
+task migrate-up
+
+# 3. Run the integration suite
+cd monolith && go test ./tests/... -v
+```
+
+### All Tests Together
+
+```bash
+# Unit tests only (fast, no DB)
+cd monolith && go test ./internal/... -v
+
+# Integration tests only (needs DB)
+cd monolith && go test ./tests/... -v
+```
 
 ---
 
 ## What's Next
 
-The remaining Phase 2 items after the integration test suite:
+The remaining Phase 2 items:
 
 | Item | Status |
 |---|---|
-| Integration tests with `httptest` | Done (this work) |
-| Shared router extraction | Done (this work) |
-| Unit tests with mock repositories | Not started |
+| Integration tests with `httptest` | Done |
+| Shared router extraction | Done |
+| Unit tests with mock repositories | Done (66 tests) |
 | `testcontainers-go` for isolated DB tests | Not started |
 | GitHub Actions CI pipeline | Not started |
 | Structured `log/slog` throughout | Not started |

@@ -26,6 +26,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// Compile-time check: *PlayerRepository must satisfy the Repository interface
+// defined in service.go. If a method is missing or has the wrong signature,
+// this line causes a compile error — catching mistakes immediately.
+//
+// The underscore _ means we don't need the variable itself — we only want
+// the compiler to verify the type assertion. (*PlayerRepository)(nil) creates
+// a nil pointer of type *PlayerRepository, which is enough for the check.
+var _ Repository = (*PlayerRepository)(nil)
+
 // PlayerRepository is the database access layer for the auth package.
 // It is the only part of this codebase allowed to execute SQL queries
 // that touch the `players` table.

@@ -14,6 +14,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// Compile-time check: *TeamRepository must satisfy the Repository interface.
+// See auth/repository.go for a detailed explanation of this pattern.
+var _ Repository = (*TeamRepository)(nil)
+
 // TeamRepository handles all DB access for the team package.
 type TeamRepository struct {
 	db *pgxpool.Pool

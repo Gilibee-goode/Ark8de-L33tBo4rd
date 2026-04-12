@@ -40,13 +40,44 @@ var (
 	ErrRequestNotPending   = errors.New("this join request is no longer pending")
 )
 
+// Repository defines the data-access methods that TeamService needs.
+//
+// This interface lists every repository method the service calls. The concrete
+// *TeamRepository satisfies it automatically via Go's structural typing.
+// In unit tests, a mock struct with the same methods is used instead.
+//
+// See auth/service.go for a longer explanation of the interface pattern.
+type Repository interface {
+	ListTeams(ctx context.Context) ([]*Team, error)
+	GetTeam(ctx context.Context, teamID string) (*Team, error)
+	GetMembers(ctx context.Context, teamID string) ([]TeamMember, error)
+	GetTeamGearUsed(ctx context.Context, teamID string) (int, error)
+	GetOwnerUsername(ctx context.Context, ownerID string) (string, error)
+	CreateTeam(ctx context.Context, name, tag, ownerID string) (*Team, error)
+	UpdateTeam(ctx context.Context, teamID, name, tag string) error
+	DeleteTeam(ctx context.Context, teamID, ownerID string) error
+	ToggleLock(ctx context.Context, teamID string) (bool, error)
+	RemoveMember(ctx context.Context, teamID, playerID string) error
+	IsMember(ctx context.Context, playerID string) (bool, error)
+	HasPendingRequest(ctx context.Context, teamID, playerID string) (bool, error)
+	CreateJoinRequest(ctx context.Context, teamID, playerID string) (*JoinRequest, error)
+	GetPendingJoinRequests(ctx context.Context, teamID string) ([]JoinRequest, error)
+	GetJoinRequest(ctx context.Context, requestID string) (*JoinRequest, error)
+	AcceptJoinRequest(ctx context.Context, requestID, teamID, playerID string) error
+	RejectJoinRequest(ctx context.Context, requestID string) error
+	AddArkadePoints(ctx context.Context, teamID, changedBy string, delta int, reason string) error
+	GetArkadePointHistory(ctx context.Context, teamID string) ([]ArkadePointLog, error)
+}
+
 // TeamService contains all business logic for team operations.
 type TeamService struct {
-	repo *TeamRepository
+	repo Repository
 }
 
 // NewTeamService constructs a TeamService.
-func NewTeamService(repo *TeamRepository) *TeamService {
+// The repo parameter accepts the Repository interface — in production a
+// *TeamRepository is passed in; in unit tests a mock is used instead.
+func NewTeamService(repo Repository) *TeamService {
 	return &TeamService{repo: repo}
 }
 
