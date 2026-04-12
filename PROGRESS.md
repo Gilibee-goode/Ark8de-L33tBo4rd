@@ -23,15 +23,15 @@
 - [x] Seed script — 2 full teams, 11 players, realistic gear + skill + Kredit data
 - [x] `docs/phase-1-complete.md` with diagrams
 
-## Phase 2: Testing + CI
+## Phase 2: Testing + CI (GitHub Actions deferred)
 - [x] Extract shared router into `internal/app/router.go` (used by both server and tests)
 - [x] Integration test suite with `httptest` + real PostgreSQL (55 test cases across 5 files)
 - [x] Unit tests for all service layer functions (66 tests across 3 files — auth, player, team)
 - [x] DB tests with `testcontainers-go` (auto-launches PostgreSQL container, runs migrations, no manual setup)
 - [ ] GitHub Actions — `go vet`, `go test`, `golangci-lint`
-- [ ] Structured logging with `log/slog`
-- [ ] Multi-stage Docker build (target < 20MB)
-- [ ] `docs/phase-2-complete.md` with diagrams
+- [x] Structured logging with `log/slog` (JSON output via `slog.NewJSONHandler`, all handlers and services)
+- [x] Multi-stage Docker build — scratch-based, 13.3 MB final image (target was < 20MB)
+- [x] `docs/phase-2-complete.md` with diagrams
 
 ## Phase 3: Service Extraction
 - [ ] Extract leaderboard-service

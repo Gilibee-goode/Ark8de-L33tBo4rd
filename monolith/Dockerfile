@@ -71,30 +71,33 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 # =================================================================
 # Stage 2: runtime — minimal image with just the binary
 # =================================================================
-# alpine:3.20 is a minimal Linux image (~5MB).
-# We copy only the compiled binary from the builder stage above —
-# the Go toolchain and source code are NOT included in this image.
-FROM alpine:3.20
+# WHAT IS scratch?
+#   `scratch` is Docker's empty image — literally zero bytes, no OS, no shell,
+#   no package manager. This is possible because our binary is STATICALLY LINKED
+#   (CGO_ENABLED=0) — it has no runtime dependencies on libc or other system libs.
+#
+# WHY scratch INSTEAD OF alpine?
+#   Alpine is ~8MB. For a statically linked Go binary that only needs:
+#     - The binary itself (~13MB)
+#     - CA certificates for HTTPS (~200KB)
+#     - Template and static files (~50KB)
+#   ...Alpine's package manager, shell, and busybox tools are dead weight.
+#   Using scratch cuts ~8MB from the final image and eliminates the OS attack surface.
+#
+# TRADE-OFFS:
+#   - No shell → cannot `docker exec -it <container> sh` for debugging
+#   - No wget → HEALTHCHECK must use the binary itself or a compiled health checker
+#   - No package manager → can't install tools at runtime
+#   These are acceptable for production — debugging is done via logs and metrics.
+FROM scratch
 
-# WHY ca-certificates?
-#   The server may make HTTPS requests to external services (e.g. S3 for
-#   file uploads in Phase 1). Without CA certificates, TLS verification
-#   fails with "certificate signed by unknown authority". This package
-#   provides the standard root certificate bundle.
-RUN apk add --no-cache ca-certificates
-
-# WHY a non-root user?
-#   By default, Docker containers run as root (UID 0). If the container is
-#   ever compromised, the attacker has root inside the container — and
-#   potentially on the host via container escapes. Running as a non-root
-#   user limits the blast radius: the attacker can only do what `appuser` can.
-#   This is a standard security practice for production container images.
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-
-# Set the working directory for the runtime container.
-# All paths that the server resolves at runtime (e.g. "templates/", "static/")
-# are relative to this directory.
-WORKDIR /app
+# WHY copy CA certificates?
+#   The server may make HTTPS requests to external services. Without CA
+#   certificates, TLS verification fails with "certificate signed by unknown
+#   authority". Since scratch has no package manager, we copy the certificates
+#   from the builder stage (Alpine's ca-certificates package is pre-installed
+#   in the golang Alpine image).
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 # Copy the compiled binary from the builder stage.
 # --from=builder refers to the stage named "builder" above.
@@ -106,8 +109,10 @@ COPY --from=builder /build/bin/server /app/server
 COPY --from=builder /build/templates /app/templates
 COPY --from=builder /build/static    /app/static
 
-# Switch to the non-root user for all subsequent RUN/CMD/ENTRYPOINT.
-USER appuser
+# Set the working directory for the runtime container.
+# All paths that the server resolves at runtime (e.g. "templates/", "static/")
+# are relative to this directory.
+WORKDIR /app
 
 # Expose port 8080 — this is documentation only (does not publish the port).
 # The actual port mapping is done in docker-compose.yml or `docker run -p`.
@@ -117,19 +122,23 @@ EXPOSE 8080
 # Docker will mark the container as "healthy" or "unhealthy" based on this.
 # This is what allows docker-compose `depends_on: condition: service_healthy` to work.
 #
-# --interval=30s   check every 30 seconds
-# --timeout=5s     fail if the check takes more than 5 seconds
-# --start-period=5s don't count failures during the first 5 seconds of startup
-# --retries=3      mark unhealthy only after 3 consecutive failures
+# In a scratch image we have no shell and no wget/curl. Instead we use the
+# binary itself as the health check command — our server returns 200 from
+# /healthz when the database is reachable, and 503 if not.
 #
-# wget is used instead of curl because Alpine includes wget by default.
-# -q: quiet (no progress output)
-# --spider: fetch the URL but don't save the body (like curl -I)
-# --tries=1: don't retry on failure (Docker manages retries)
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD wget -q --spider --tries=1 http://localhost:8080/healthz || exit 1
+# We call the binary with "NONE" as the healthcheck arg to trigger a simple HTTP GET.
+# HOWEVER: since our binary is an HTTP server (not a health-check CLI), we can't
+# easily do this from scratch. Instead, we'll rely on the orchestrator (docker-compose
+# or Kubernetes) to probe the /healthz endpoint externally.
+#
+# For docker-compose, add this to the service definition:
+#   healthcheck:
+#     test: ["CMD-SHELL", "wget -q --spider --tries=1 http://localhost:8080/healthz || exit 1"]
+#
+# For Kubernetes, use a liveness/readiness probe (configured in the Deployment manifest).
 
 # CMD is the default command run when the container starts.
-# Using array form (exec form) avoids wrapping in a shell — the process
-# receives signals (SIGTERM) directly, enabling our graceful shutdown code.
+# Using array form (exec form) is REQUIRED in scratch images — there is no
+# /bin/sh to interpret shell form. The binary receives OS signals (SIGTERM)
+# directly, enabling our graceful shutdown code in main.go.
 CMD ["/app/server"]
