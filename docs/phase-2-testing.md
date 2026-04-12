@@ -120,7 +120,7 @@ flowchart LR
 
 ---
 
-## How It Works
+## How Integration Tests Work
 
 ```mermaid
 flowchart LR
@@ -129,32 +129,107 @@ flowchart LR
         Tests["Test Functions"]
     end
 
+    subgraph "Testcontainers"
+        Docker["Docker Daemon"]
+        PG["postgres:16-alpine<br/>(disposable container)"]
+    end
+
     subgraph "httptest Server"
         Router["chi Router<br/>(app.BuildRouter)"]
         MW["Middleware<br/>RequestID + Logger + Auth"]
         Handlers["Handlers<br/>auth + player + team + leaderboard + frontend"]
     end
 
-    TestMain -->|"1. Connect to PostgreSQL"| DB[(PostgreSQL)]
-    TestMain -->|"2. Build shared router"| Router
-    TestMain -->|"3. Start httptest.NewServer"| Server["httptest.Server<br/>http://127.0.0.1:random"]
-    TestMain -->|"4. Truncate data tables"| DB
-    TestMain -->|"5. Run tests"| Tests
+    TestMain -->|"1. Start container"| Docker
+    Docker -->|"2. Launch"| PG
+    TestMain -->|"3. Run migrations"| PG
+    TestMain -->|"4. Build shared router"| Router
+    TestMain -->|"5. Start httptest.NewServer"| Server["httptest.Server<br/>http://127.0.0.1:random"]
+    TestMain -->|"6. Truncate data tables"| PG
+    TestMain -->|"7. Run tests"| Tests
 
     Tests -->|"HTTP requests"| Server
     Server --> Router --> MW --> Handlers
-    Handlers --> DB
+    Handlers --> PG
+
+    Tests -.->|"8. Teardown"| Docker
 ```
 
 ### Key Design Choices
 
 | Choice | Why |
 |---|---|
+| **Testcontainers** (default) | Zero-setup: tests launch their own disposable PostgreSQL. Just run `go test` — Docker handles the rest |
+| **DATABASE_URL override** | Escape hatch: set `DATABASE_URL` to use an existing database (docker-compose dev, CI service) |
 | **Shared router** (`internal/app/router.go`) | Tests use the exact same router as production — no hand-assembled imitation that could drift |
-| **Real PostgreSQL** (same as docker-compose) | No mocks, no SQLite — tests catch real DB issues |
-| **`httptest.NewServer`** | Standard library; starts a real HTTP server on a random port, no Docker needed for the test server itself |
+| **Real PostgreSQL** | No mocks, no SQLite — tests catch real DB issues (SQL errors, constraints, transactions) |
+| **`httptest.NewServer`** | Standard library; starts a real HTTP server on a random port |
 | **Truncate between runs** | `TestMain` clears data tables but preserves reference data (skills, gear_types) |
-| **No third-party test libs** | Uses only `testing`, `net/http`, `encoding/json` — no testify, no gomega, nothing to learn beyond Go stdlib |
+| **No third-party test libs** | Uses only `testing`, `net/http`, `encoding/json` — no testify, no gomega |
+
+---
+
+## Testcontainers: Self-Contained Database Tests
+
+### What Is Testcontainers?
+
+`testcontainers-go` is a library that creates real Docker containers from inside test code.
+Instead of requiring a pre-running PostgreSQL (via `task dev`), the test suite launches
+its own disposable container, runs all migrations against it, and tears it down when done.
+
+### Why This Matters
+
+| Before (docker-compose) | After (testcontainers) |
+|---|---|
+| Must run `task dev && task migrate-up` before tests | Just run `go test ./tests/... -v` |
+| Tests share the dev database (stale data, conflicts) | Each run gets a clean, isolated database |
+| CI needs a PostgreSQL service configured | CI just needs Docker (already available) |
+| Manual cleanup after failed test runs | Container auto-destroys on completion |
+
+### How It Works
+
+The setup lives in two files:
+
+**`tests/container_test.go`** — launches the container and runs migrations:
+```go
+pgContainer, err := postgres.Run(ctx,
+    "postgres:16-alpine",
+    postgres.WithDatabase("ark8de_test"),
+    postgres.WithUsername("test"),
+    postgres.WithPassword("test"),
+    testcontainers.WithWaitStrategy(
+        wait.ForLog("database system is ready to accept connections").
+            WithOccurrence(2).
+            WithStartupTimeout(30*time.Second),
+    ),
+)
+
+// Get the connection string (random port assigned by Docker)
+connStr, err = pgContainer.ConnectionString(ctx, "sslmode=disable")
+
+// Run all 12 migrations against the fresh container
+m, _ := migrate.New("file://../db/migrations", connStr)
+m.Up()
+```
+
+**`tests/setup_test.go`** — decides which database to use:
+```go
+dbURL = os.Getenv("DATABASE_URL")
+if dbURL == "" {
+    // No external DB → launch a testcontainer
+    dbURL, containerCleanup, err = startPostgresContainer(ctx)
+} else {
+    // External DB provided → use it directly
+    fmt.Printf("using external database: %s\n", dbURL)
+}
+```
+
+### Two Database Modes
+
+| Mode | When to use | Command |
+|---|---|---|
+| **Testcontainers** (default) | Normal development, CI | `go test ./tests/... -v` |
+| **External database** (override) | When you already have docker-compose running | `DATABASE_URL="postgres://..." go test ./tests/... -v` |
 
 ---
 
@@ -266,6 +341,11 @@ own database pool and JWT secret. This guarantees tests exercise the real middle
 | **`errors.Is(err, target)`** | Tests whether an error (or any error in its chain) matches a specific sentinel error |
 | **`errors.As(err, &target)`** | Extracts a specific error type from a chain — used to check `*pgconn.PgError` for PostgreSQL error codes |
 | **`bcrypt.MinCost`** | Uses minimum bcrypt work factor in tests for speed (~1ms vs ~100ms at DefaultCost) |
+| **`testcontainers-go`** | Library that creates real Docker containers from test code — tests launch their own database, no manual setup |
+| **`postgres.Run(ctx, image, opts...)`** | Testcontainers helper that starts a PostgreSQL container with the specified image and config |
+| **`wait.ForLog(...).WithOccurrence(2)`** | Tells testcontainers to wait until a log message appears N times before considering the container ready |
+| **`migrate.New(source, dbURL)`** | Creates a golang-migrate runner programmatically — same library as `cmd/migrate` but called from Go code |
+| **Blank imports (`_ "pkg"`)** | Import a package only for its `init()` side effects (e.g. registering a database driver) without calling any of its functions |
 
 ---
 
@@ -370,27 +450,29 @@ go test ./internal/player/... -v
 go test ./internal/team/... -v
 ```
 
-### Integration Tests (requires PostgreSQL)
+### Integration Tests (with testcontainers — no setup needed)
 
 ```bash
-# 1. Start the database (if not already running)
-task dev
-
-# 2. Apply migrations (if not already applied)
-task migrate-up
-
-# 3. Run the integration suite
+# Just run it — testcontainers launches PostgreSQL automatically
 cd monolith && go test ./tests/... -v
+
+# Or use an existing database (e.g. docker-compose dev)
+DATABASE_URL="postgres://ark8de:ark8de_dev@localhost:5432/ark8de?sslmode=disable" \
+  go test ./tests/... -v
 ```
+
+**Prerequisites:** Docker must be running (for testcontainers mode).
 
 ### All Tests Together
 
 ```bash
-# Unit tests only (fast, no DB)
-cd monolith && go test ./internal/... -v
+cd monolith
 
-# Integration tests only (needs DB)
-cd monolith && go test ./tests/... -v
+# Unit tests (fast, no DB, ~2 seconds)
+go test ./internal/... -v
+
+# Integration tests (testcontainers, ~13 seconds)
+go test ./tests/... -v
 ```
 
 ---
@@ -401,10 +483,10 @@ The remaining Phase 2 items:
 
 | Item | Status |
 |---|---|
-| Integration tests with `httptest` | Done |
+| Integration tests with `httptest` | Done (55 tests) |
 | Shared router extraction | Done |
 | Unit tests with mock repositories | Done (66 tests) |
-| `testcontainers-go` for isolated DB tests | Not started |
+| `testcontainers-go` for isolated DB tests | Done |
 | GitHub Actions CI pipeline | Not started |
 | Structured `log/slog` throughout | Not started |
 | Multi-stage Docker build < 20 MB | Already done (Phase 1 Dockerfile) |

@@ -1,26 +1,30 @@
 // Package tests — Integration test suite for the Ark8de monolith
 //
 // This file is the TEST SETUP. It runs before any individual test and provides:
-//   - A real PostgreSQL connection (same DB as docker-compose dev)
+//   - A real PostgreSQL database (either via testcontainers or an external DB)
 //   - A fully wired HTTP test server using httptest.NewServer
 //   - Helper functions for making requests, parsing JSON, and asserting status codes
 //
-// WHY INTEGRATION TESTS (not unit tests)?
-//   Our services take concrete repository types, not interfaces.
-//   That means we can't easily swap in mock repositories for unit testing.
-//   Instead, we test the full stack: HTTP request → router → handler → service → repository → PostgreSQL.
-//   This catches real bugs that unit tests with mocks would miss — like SQL errors,
-//   missing columns, transaction issues, and middleware misconfiguration.
+// DATABASE MODES:
+//
+//   1. Testcontainers (default) — a fresh PostgreSQL container is launched
+//      automatically via Docker. Migrations run against it. No setup needed.
+//      Just run: cd monolith && go test ./tests/... -v
+//
+//   2. External database (override) — set the DATABASE_URL environment variable
+//      to use an existing PostgreSQL instance (e.g. docker-compose dev).
+//      Run: DATABASE_URL="postgres://..." go test ./tests/... -v
+//
+// WHY INTEGRATION TESTS?
+//   These tests exercise the full stack: HTTP request → router → handler →
+//   service → repository → PostgreSQL. They catch bugs that unit tests miss —
+//   SQL errors, missing columns, transaction issues, and middleware misconfig.
 //
 // HOW IT WORKS:
 //   Go's testing package looks for a special function called TestMain(m *testing.M).
 //   If it exists, Go calls TestMain INSTEAD of running tests directly.
 //   Inside TestMain, we set up the database, create the test server, and then call
 //   m.Run() to execute the actual test functions. After all tests finish, we clean up.
-//
-// IMPORTANT: These tests require a running PostgreSQL instance with migrations applied.
-//   Run: task dev && task migrate-up
-//   Then: cd monolith && go test ./tests/... -v
 package tests
 
 import (
@@ -80,18 +84,52 @@ const jwtSecret = "test-secret-for-integration-tests"
 // returns an exit code (0 = all passed, 1 = some failed).
 // We pass that exit code to os.Exit so the CI pipeline gets the right signal.
 func TestMain(m *testing.M) {
-	// ---- Step 1: Determine the database URL ----
-	// In CI, DATABASE_URL is set by the GitHub Actions workflow.
-	// In local dev, we fall back to the same URL as docker-compose.
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://ark8de:ark8de_dev@localhost:5432/ark8de?sslmode=disable"
+	ctx := context.Background()
+
+	// ---- Step 1: Change to monolith root ----
+	// The working directory must be monolith/ so that:
+	//   - Template paths ("templates/layout/base.html") resolve correctly
+	//   - Static file paths ("static/style.css") resolve correctly
+	//   - Migration paths ("../db/migrations") resolve correctly for testcontainers
+	if err := os.Chdir(".."); err != nil {
+		fmt.Fprintf(os.Stderr, "FATAL: cannot chdir to monolith root: %v\n", err)
+		os.Exit(1)
 	}
 
-	// ---- Step 2: Connect to PostgreSQL ----
+	// ---- Step 2: Get a database (testcontainers or external) ----
+	//
+	// If DATABASE_URL is set, use that external database directly.
+	// Otherwise, spin up a fresh PostgreSQL container via testcontainers.
+	//
+	// The testcontainers path is the default because it requires zero setup —
+	// just Docker running. The DATABASE_URL override exists for:
+	//   - Local dev when you already have docker-compose running
+	//   - CI environments that provide their own PostgreSQL service
+	var dbURL string
+	var containerCleanup func()
+
+	dbURL = os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		// No external database — launch a disposable container.
+		// startPostgresContainer (in container_test.go) handles:
+		//   1. Starting a postgres:16-alpine container
+		//   2. Waiting for it to be ready
+		//   3. Running all migrations (creates tables, indexes, seeds gear_types)
+		var err error
+		dbURL, containerCleanup, err = startPostgresContainer(ctx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "FATAL: cannot start test database container: %v\n", err)
+			fmt.Fprintf(os.Stderr, "HINT: make sure Docker is running, or set DATABASE_URL to use an external database\n")
+			os.Exit(1)
+		}
+		fmt.Println("✓ testcontainers: PostgreSQL container started with migrations applied")
+	} else {
+		fmt.Printf("✓ using external database: %s\n", dbURL)
+	}
+
+	// ---- Step 3: Connect to the database ----
 	// context.Background() creates a root context with no deadline.
 	// We use it here because the test setup should either succeed or fail fast.
-	ctx := context.Background()
 	var err error
 	testPool, err = pgxpool.New(ctx, dbURL)
 	if err != nil {
@@ -105,42 +143,38 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	// ---- Step 3: Build the application router ----
+	// ---- Step 4: Build the application router ----
 	// app.BuildRouter wires up the exact same dependency graph as production:
 	// repos → services → handlers → chi router.
-	//
-	// We pass "templates" as the templates directory. This works because
-	// go test runs from the package directory (monolith/tests/), but we
-	// change to monolith/ below so relative paths resolve correctly.
-	//
-	// We change the working directory to the monolith root so that the
-	// template paths ("templates/layout/base.html") and static file paths
-	// ("static/style.css") resolve correctly — they are relative to monolith/.
-	if err := os.Chdir(".."); err != nil {
-		fmt.Fprintf(os.Stderr, "FATAL: cannot chdir to monolith root: %v\n", err)
-		os.Exit(1)
-	}
-
+	// We pass the test database pool so the app talks to the right database.
 	router := app.BuildRouter(testPool, jwtSecret, "templates")
 
-	// ---- Step 4: Start the test HTTP server ----
+	// ---- Step 5: Start the test HTTP server ----
 	// httptest.NewServer takes any http.Handler (our chi.Router implements it)
 	// and starts a real HTTP server on localhost with a random port.
 	// testServer.URL will be something like "http://127.0.0.1:52431".
 	testServer = httptest.NewServer(router)
 
-	// ---- Step 5: Clean the database before tests run ----
+	// ---- Step 6: Clean the database before tests run ----
 	// We truncate all data tables to ensure tests start from a clean state.
 	// Reference tables (skills, gear_types) are preserved — they're seeded
 	// by migrations or the seed script and tests depend on them existing.
 	truncateDataTables(ctx)
 
-	// ---- Step 6: Run all tests ----
+	// ---- Step 7: Run all tests ----
 	exitCode := m.Run()
 
-	// ---- Step 7: Teardown ----
+	// ---- Step 8: Teardown ----
+	// Close the HTTP server and database pool.
 	testServer.Close()
 	testPool.Close()
+
+	// If we started a testcontainer, stop and remove it.
+	// This is a no-op if we used an external database (containerCleanup is nil).
+	if containerCleanup != nil {
+		containerCleanup()
+		fmt.Println("✓ testcontainers: PostgreSQL container stopped and removed")
+	}
 
 	os.Exit(exitCode)
 }

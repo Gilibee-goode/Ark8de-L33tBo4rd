@@ -27,7 +27,7 @@
 - [x] Extract shared router into `internal/app/router.go` (used by both server and tests)
 - [x] Integration test suite with `httptest` + real PostgreSQL (55 test cases across 5 files)
 - [x] Unit tests for all service layer functions (66 tests across 3 files — auth, player, team)
-- [ ] DB tests with `testcontainers-go`
+- [x] DB tests with `testcontainers-go` (auto-launches PostgreSQL container, runs migrations, no manual setup)
 - [ ] GitHub Actions — `go vet`, `go test`, `golangci-lint`
 - [ ] Structured logging with `log/slog`
 - [ ] Multi-stage Docker build (target < 20MB)
