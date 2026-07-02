@@ -55,15 +55,14 @@ type Player struct {
 	// nil means "no photo set yet"; a non-nil pointer means there is a URL.
 	ProfilePhotoURL *string
 
-	// ClassRole is the player's chosen combat class in the arena game.
-	// One of: "tank", "dps", "healer", "support"
+	// ClassRole is the player's chosen archetype in the arena game.
+	// One of: smartass, ninja, psycho, hacker, merkava, kommando.
 	// Also a pointer because it starts as NULL — players choose a class after registering.
 	ClassRole *string
 
-	// SkillPointsTotal is the player's total skill point budget.
-	// Players spend these on skills. The remaining balance is computed at
-	// read time (total minus the sum of allocated skill costs) — we don't store it.
-	SkillPointsTotal int
+	// Level gates which skill tiers the player may hold (1–3, default 1).
+	// Raised by moderators as the player progresses in the physical game.
+	Level int
 
 	// Kredits is the player's in-game currency balance.
 	// Cannot go below 0 (enforced by a DB CHECK constraint).
@@ -83,14 +82,14 @@ type Player struct {
 // the fields in the JSON output. "id" in JSON → ID in Go.
 // Without these tags, Go would use the field name as-is (e.g. "ID" not "id").
 type PlayerResponse struct {
-	ID               string  `json:"id"`
-	Username         string  `json:"username"`
-	Email            string  `json:"email"`
-	Role             string  `json:"role"`
-	ProfilePhotoURL  *string `json:"profile_photo_url"`
-	ClassRole        *string `json:"class_role"`
-	SkillPointsTotal int     `json:"skill_points_total"`
-	Kredits          int     `json:"kredits"`
+	ID              string  `json:"id"`
+	Username        string  `json:"username"`
+	Email           string  `json:"email"`
+	Role            string  `json:"role"`
+	ProfilePhotoURL *string `json:"profile_photo_url"`
+	ClassRole       *string `json:"class_role"`
+	Level           int     `json:"level"`
+	Kredits         int     `json:"kredits"`
 }
 
 // ToResponse converts a Player into a PlayerResponse, dropping sensitive fields.
@@ -101,14 +100,14 @@ type PlayerResponse struct {
 // Always use this when writing player data to an HTTP response.
 func (p *Player) ToResponse() *PlayerResponse {
 	return &PlayerResponse{
-		ID:               p.ID,
-		Username:         p.Username,
-		Email:            p.Email,
-		Role:             p.Role,
-		ProfilePhotoURL:  p.ProfilePhotoURL,
-		ClassRole:        p.ClassRole,
-		SkillPointsTotal: p.SkillPointsTotal,
-		Kredits:          p.Kredits,
+		ID:              p.ID,
+		Username:        p.Username,
+		Email:           p.Email,
+		Role:            p.Role,
+		ProfilePhotoURL: p.ProfilePhotoURL,
+		ClassRole:       p.ClassRole,
+		Level:           p.Level,
+		Kredits:         p.Kredits,
 	}
 }
 

@@ -49,6 +49,19 @@
 - [x] Integration tests for login/register/logout/CSRF/navbar (15 new tests in `tests/session_test.go`)
 - [x] Backward compatibility — all 55 existing integration tests pass (Bearer JWT still works)
 
+## Game Mechanics: Archetype Redesign ✅ (July 2026)
+Source: the Hebrew design sheet `ארקייד- מכאניקת ארכיטיפים.xlsx` → translated in `docs/archetypes.md`.
+- [x] Migration 000014 — `archetypes` table, 6 classes (smartass/ninja/psycho/hacker/merkava/kommando),
+      player `level` (1–3, replaces the skill-point budget), skills rebuilt as blue/red
+      branch trees (36 skills seeded), weapon catalog with class restrictions
+- [x] Skill rules — one skill per tier (blue XOR red), tier ≤ player level, level-down prunes
+- [x] Stats — HP = 3 base + archetype passive (merkava +1) + skill bonuses (Fridge +1)
+- [x] Gear — 8-weapon catalog; spear/long-weapon, shield, power-ball restrictions enforced;
+      hacker's Grid is Good adds +4 to the team gear pool (data-driven)
+- [x] New endpoint `PUT /api/players/:id/level` (moderator) + `/mod/set-level` form
+- [x] Seed rewritten (all 6 archetypes, levels, legal allocations), test-credentials updated
+- [x] Tests — unit + integration suites updated (tier rules, restrictions, level pruning)
+
 ## Phase 3: Service Extraction ✅
 - [x] Extract leaderboard-service (subscribes to `team.>` events, durable NATS consumer)
 - [x] Extract auth-service

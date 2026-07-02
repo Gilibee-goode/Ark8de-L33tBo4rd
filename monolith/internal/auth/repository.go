@@ -70,7 +70,7 @@ const playerColumns = `
 	role,
 	profile_photo_url,
 	class_role,
-	skill_points_total,
+	level,
 	kredits,
 	created_at,
 	updated_at`
@@ -96,10 +96,10 @@ func scanPlayer(row pgx.Row) (*Player, error) {
 		&p.Email,            // email
 		&p.PasswordHash,     // password_hash
 		&p.Role,             // role
-		&p.ProfilePhotoURL,  // profile_photo_url (nullable → *string)
-		&p.ClassRole,        // class_role        (nullable → *string)
-		&p.SkillPointsTotal, // skill_points_total
-		&p.Kredits,          // kredits
+		&p.ProfilePhotoURL, // profile_photo_url (nullable → *string)
+		&p.ClassRole,       // class_role        (nullable → *string)
+		&p.Level,           // level (1–3, default 1)
+		&p.Kredits,         // kredits
 		&p.CreatedAt,        // created_at
 		&p.UpdatedAt,        // updated_at
 	)

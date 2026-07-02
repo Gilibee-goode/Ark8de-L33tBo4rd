@@ -563,3 +563,26 @@ func (h *FrontendHandler) GrantKredits(w http.ResponseWriter, r *http.Request) {
 	middleware.SetFlash(w, "success", "Kredits granted!")
 	http.Redirect(w, r, "/mod", http.StatusSeeOther)
 }
+
+// SetLevel handles POST /mod/set-level — sets a player's level (1–3).
+// Lowering a level prunes skill allocations above the new level.
+func (h *FrontendHandler) SetLevel(w http.ResponseWriter, r *http.Request) {
+	playerID := r.FormValue("player_id")
+	levelStr := r.FormValue("level")
+
+	level, err := strconv.Atoi(levelStr)
+	if err != nil || playerID == "" {
+		middleware.SetFlash(w, "error", "Please enter a player ID and a level (1–3)")
+		http.Redirect(w, r, "/mod", http.StatusSeeOther)
+		return
+	}
+
+	if err := h.playerSvc.SetLevel(r.Context(), playerID, player.SetLevelRequest{Level: level}); err != nil {
+		middleware.SetFlash(w, "error", "Failed to set level: "+err.Error())
+		http.Redirect(w, r, "/mod", http.StatusSeeOther)
+		return
+	}
+
+	middleware.SetFlash(w, "success", "Level updated!")
+	http.Redirect(w, r, "/mod", http.StatusSeeOther)
+}

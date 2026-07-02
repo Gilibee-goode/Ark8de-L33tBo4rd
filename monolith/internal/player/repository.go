@@ -77,38 +77,39 @@ func (r *PlayerRepository) UpdateClassRole(ctx context.Context, playerID, classR
 // This is the list players choose from when allocating skills.
 func (r *PlayerRepository) GetSkillsByClass(ctx context.Context, classRole string) ([]Skill, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id::text, name, COALESCE(description, ''), class_role,
-		       cost_skill_points, effect_description, effect_type,
-		       hp_bonus, armor_bonus
+		SELECT id::text, class_role, branch, tier, name, description,
+		       hp_bonus, team_gear_bonus
 		FROM   skills
-		WHERE  class_role = $1
-		ORDER BY cost_skill_points ASC`,
+		WHERE  ($1 = '' OR class_role = $1)
+		ORDER BY class_role, tier, branch`,
 		classRole,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("PlayerRepository.GetSkillsByClass: %w", err)
 	}
-	// rows.Close() releases the connection back to the pool.
-	// defer ensures it runs even if we return early due to an error.
 	defer rows.Close()
 
+	skills, err := scanSkills(rows)
+	if err != nil {
+		return nil, fmt.Errorf("PlayerRepository.GetSkillsByClass: %w", err)
+	}
+	return skills, nil
+}
+
+// scanSkills reads skill rows into a slice — shared by all skill queries,
+// which must SELECT the same columns in the same order.
+func scanSkills(rows pgx.Rows) ([]Skill, error) {
 	var skills []Skill
-	// rows.Next() advances the cursor to the next row.
-	// The loop runs once per result row.
 	for rows.Next() {
 		var s Skill
-		if err := rows.Scan(&s.ID, &s.Name, &s.Description, &s.ClassRole,
-			&s.CostSkillPoints, &s.EffectDesc, &s.EffectType,
-			&s.HPBonus, &s.ArmorBonus); err != nil {
-			return nil, fmt.Errorf("PlayerRepository.GetSkillsByClass: scan: %w", err)
+		if err := rows.Scan(&s.ID, &s.ClassRole, &s.Branch, &s.Tier,
+			&s.Name, &s.Description, &s.HPBonus, &s.TeamGearBonus); err != nil {
+			return nil, fmt.Errorf("scan skill: %w", err)
 		}
-		// append adds s to the slice, growing it as needed.
 		skills = append(skills, s)
 	}
-	// rows.Err() returns the first error encountered during iteration,
-	// which is distinct from query execution errors.
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("PlayerRepository.GetSkillsByClass: rows: %w", err)
+		return nil, fmt.Errorf("rows: %w", err)
 	}
 	return skills, nil
 }
@@ -116,13 +117,12 @@ func (r *PlayerRepository) GetSkillsByClass(ctx context.Context, classRole strin
 // GetPlayerSkills returns all skills currently allocated by a player.
 func (r *PlayerRepository) GetPlayerSkills(ctx context.Context, playerID string) ([]Skill, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT s.id::text, s.name, COALESCE(s.description, ''), s.class_role,
-		       s.cost_skill_points, s.effect_description, s.effect_type,
-		       s.hp_bonus, s.armor_bonus
+		SELECT s.id::text, s.class_role, s.branch, s.tier, s.name, s.description,
+		       s.hp_bonus, s.team_gear_bonus
 		FROM   player_skill_allocations psa
 		JOIN   skills s ON s.id = psa.skill_id
 		WHERE  psa.player_id = $1::uuid
-		ORDER BY s.cost_skill_points ASC`,
+		ORDER BY s.tier, s.branch`,
 		playerID,
 	)
 	if err != nil {
@@ -130,15 +130,9 @@ func (r *PlayerRepository) GetPlayerSkills(ctx context.Context, playerID string)
 	}
 	defer rows.Close()
 
-	var skills []Skill
-	for rows.Next() {
-		var s Skill
-		if err := rows.Scan(&s.ID, &s.Name, &s.Description, &s.ClassRole,
-			&s.CostSkillPoints, &s.EffectDesc, &s.EffectType,
-			&s.HPBonus, &s.ArmorBonus); err != nil {
-			return nil, fmt.Errorf("PlayerRepository.GetPlayerSkills: scan: %w", err)
-		}
-		skills = append(skills, s)
+	skills, err := scanSkills(rows)
+	if err != nil {
+		return nil, fmt.Errorf("PlayerRepository.GetPlayerSkills: %w", err)
 	}
 	return skills, nil
 }
@@ -184,31 +178,22 @@ func (r *PlayerRepository) GetSkillsByIDs(ctx context.Context, ids []string) ([]
 		return nil, nil
 	}
 
-	// Build a VALUES list for the IN clause: ($1::uuid, $2::uuid, ...)
-	// We convert each string ID to uuid in the query to avoid type mismatches.
-	// pgx supports passing a slice as a parameter with the ANY operator.
+	// pgx converts []string to a PostgreSQL text array for ANY().
 	rows, err := r.db.Query(ctx, `
-		SELECT id::text, name, COALESCE(description, ''), class_role,
-		       cost_skill_points, effect_description, effect_type,
-		       hp_bonus, armor_bonus
+		SELECT id::text, class_role, branch, tier, name, description,
+		       hp_bonus, team_gear_bonus
 		FROM   skills
 		WHERE  id::text = ANY($1)`,
-		ids, // pgx converts []string to a PostgreSQL text array for ANY()
+		ids,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("PlayerRepository.GetSkillsByIDs: %w", err)
 	}
 	defer rows.Close()
 
-	var skills []Skill
-	for rows.Next() {
-		var s Skill
-		if err := rows.Scan(&s.ID, &s.Name, &s.Description, &s.ClassRole,
-			&s.CostSkillPoints, &s.EffectDesc, &s.EffectType,
-			&s.HPBonus, &s.ArmorBonus); err != nil {
-			return nil, fmt.Errorf("PlayerRepository.GetSkillsByIDs: scan: %w", err)
-		}
-		skills = append(skills, s)
+	skills, err := scanSkills(rows)
+	if err != nil {
+		return nil, fmt.Errorf("PlayerRepository.GetSkillsByIDs: %w", err)
 	}
 	return skills, nil
 }
@@ -217,11 +202,11 @@ func (r *PlayerRepository) GetSkillsByIDs(ctx context.Context, ids []string) ([]
 // Gear
 // ---------------------------------------------------------------------------
 
-// GetAllGearTypes returns every gear type (sword, bow, spear, shield).
+// GetAllGearTypes returns every weapon in the catalog.
 // Used to let players browse available equipment.
 func (r *PlayerRepository) GetAllGearTypes(ctx context.Context) ([]GearType, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT id::text, name, gear_point_cost FROM gear_types ORDER BY gear_point_cost ASC`,
+		`SELECT id::text, name, gear_point_cost, restricted_to FROM gear_types ORDER BY gear_point_cost ASC`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("PlayerRepository.GetAllGearTypes: %w", err)
@@ -231,7 +216,7 @@ func (r *PlayerRepository) GetAllGearTypes(ctx context.Context) ([]GearType, err
 	var gear []GearType
 	for rows.Next() {
 		var g GearType
-		if err := rows.Scan(&g.ID, &g.Name, &g.GearPointCost); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.GearPointCost, &g.RestrictedTo); err != nil {
 			return nil, fmt.Errorf("PlayerRepository.GetAllGearTypes: scan: %w", err)
 		}
 		gear = append(gear, g)
@@ -242,7 +227,7 @@ func (r *PlayerRepository) GetAllGearTypes(ctx context.Context) ([]GearType, err
 // GetPlayerGear returns the gear types currently selected by a player.
 func (r *PlayerRepository) GetPlayerGear(ctx context.Context, playerID string) ([]GearType, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT gt.id::text, gt.name, gt.gear_point_cost
+		SELECT gt.id::text, gt.name, gt.gear_point_cost, gt.restricted_to
 		FROM   player_gear pg
 		JOIN   gear_types gt ON gt.id = pg.gear_type_id
 		WHERE  pg.player_id = $1::uuid
@@ -257,7 +242,7 @@ func (r *PlayerRepository) GetPlayerGear(ctx context.Context, playerID string) (
 	var gear []GearType
 	for rows.Next() {
 		var g GearType
-		if err := rows.Scan(&g.ID, &g.Name, &g.GearPointCost); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.GearPointCost, &g.RestrictedTo); err != nil {
 			return nil, fmt.Errorf("PlayerRepository.GetPlayerGear: scan: %w", err)
 		}
 		gear = append(gear, g)
@@ -302,7 +287,7 @@ func (r *PlayerRepository) GetGearTypesByIDs(ctx context.Context, ids []string) 
 		return nil, nil
 	}
 	rows, err := r.db.Query(ctx,
-		`SELECT id::text, name, gear_point_cost FROM gear_types WHERE id::text = ANY($1)`,
+		`SELECT id::text, name, gear_point_cost, restricted_to FROM gear_types WHERE id::text = ANY($1)`,
 		ids,
 	)
 	if err != nil {
@@ -313,7 +298,7 @@ func (r *PlayerRepository) GetGearTypesByIDs(ctx context.Context, ids []string) 
 	var gear []GearType
 	for rows.Next() {
 		var g GearType
-		if err := rows.Scan(&g.ID, &g.Name, &g.GearPointCost); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.GearPointCost, &g.RestrictedTo); err != nil {
 			return nil, fmt.Errorf("PlayerRepository.GetGearTypesByIDs: scan: %w", err)
 		}
 		gear = append(gear, g)
@@ -337,13 +322,21 @@ func (r *PlayerRepository) GetTeamGearPointsUsed(ctx context.Context, playerID s
 			LIMIT  1
 		)
 		SELECT
-			COALESCE(mt.gear_points_total, 0),
+			-- Team pool = base total + skill bonuses held by members
+			-- (the hacker's "Grid is Good" grants team_gear_bonus = 4).
+			COALESCE(mt.gear_points_total, 0) + COALESCE((
+				SELECT COALESCE(SUM(s.team_gear_bonus), 0)
+				FROM   team_members tm2
+				JOIN   player_skill_allocations psa ON psa.player_id = tm2.player_id
+				JOIN   skills s ON s.id = psa.skill_id
+				WHERE  tm2.team_id = mt.team_id
+			), 0),
 			COALESCE(SUM(gt.gear_point_cost), 0)
 		FROM   my_team mt
 		LEFT JOIN team_members all_tm ON all_tm.team_id = mt.team_id
 		LEFT JOIN player_gear pg ON pg.player_id = all_tm.player_id
 		LEFT JOIN gear_types gt ON gt.id = pg.gear_type_id
-		GROUP BY mt.gear_points_total`,
+		GROUP BY mt.team_id, mt.gear_points_total`,
 		playerID,
 	)
 
@@ -364,13 +357,13 @@ func (r *PlayerRepository) GetTeamGearPointsUsed(ctx context.Context, playerID s
 // GetPublicProfile fetches the publicly visible fields of any player.
 func (r *PlayerRepository) GetPublicProfile(ctx context.Context, playerID string) (*PublicPlayerResponse, error) {
 	row := r.db.QueryRow(ctx, `
-		SELECT id::text, username, role, profile_photo_url, class_role
+		SELECT id::text, username, role, profile_photo_url, class_role, level
 		FROM   players
 		WHERE  id = $1::uuid`,
 		playerID,
 	)
 	var p PublicPlayerResponse
-	if err := row.Scan(&p.ID, &p.Username, &p.Role, &p.ProfilePhotoURL, &p.ClassRole); err != nil {
+	if err := row.Scan(&p.ID, &p.Username, &p.Role, &p.ProfilePhotoURL, &p.ClassRole, &p.Level); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, pgx.ErrNoRows
 		}
@@ -379,16 +372,54 @@ func (r *PlayerRepository) GetPublicProfile(ctx context.Context, playerID string
 	return &p, nil
 }
 
-// GetPlayerCore fetches the minimal player fields needed for stats computation.
-func (r *PlayerRepository) GetPlayerCore(ctx context.Context, playerID string) (classRole *string, skillPointsTotal int, err error) {
-	row := r.db.QueryRow(ctx,
-		`SELECT class_role, skill_points_total FROM players WHERE id = $1::uuid`,
+// GetPlayerCore fetches the minimal player fields needed for stats and skill
+// validation: class, level, and the archetype's passive HP bonus (0 if the
+// player has not picked a class yet).
+func (r *PlayerRepository) GetPlayerCore(ctx context.Context, playerID string) (classRole *string, level int, passiveHPBonus int, err error) {
+	row := r.db.QueryRow(ctx, `
+		SELECT p.class_role, p.level, COALESCE(a.hp_bonus, 0)
+		FROM   players p
+		LEFT JOIN archetypes a ON a.class_role = p.class_role
+		WHERE  p.id = $1::uuid`,
 		playerID,
 	)
-	if scanErr := row.Scan(&classRole, &skillPointsTotal); scanErr != nil {
-		return nil, 0, fmt.Errorf("PlayerRepository.GetPlayerCore: %w", scanErr)
+	if scanErr := row.Scan(&classRole, &level, &passiveHPBonus); scanErr != nil {
+		return nil, 0, 0, fmt.Errorf("PlayerRepository.GetPlayerCore: %w", scanErr)
 	}
-	return classRole, skillPointsTotal, nil
+	return classRole, level, passiveHPBonus, nil
+}
+
+// SetPlayerLevel updates a player's level and prunes any skill allocations
+// whose tier is now above the new level (relevant when leveling down).
+func (r *PlayerRepository) SetPlayerLevel(ctx context.Context, playerID string, level int) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("PlayerRepository.SetPlayerLevel: begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx,
+		`UPDATE players SET level = $1, updated_at = NOW() WHERE id = $2::uuid`,
+		level, playerID,
+	)
+	if err != nil {
+		return fmt.Errorf("PlayerRepository.SetPlayerLevel: update: %w", err)
+	}
+
+	// Remove allocations the player no longer qualifies for.
+	_, err = tx.Exec(ctx, `
+		DELETE FROM player_skill_allocations psa
+		USING  skills s
+		WHERE  psa.skill_id = s.id
+		  AND  psa.player_id = $1::uuid
+		  AND  s.tier > $2`,
+		playerID, level,
+	)
+	if err != nil {
+		return fmt.Errorf("PlayerRepository.SetPlayerLevel: prune skills: %w", err)
+	}
+
+	return tx.Commit(ctx)
 }
 
 // ---------------------------------------------------------------------------

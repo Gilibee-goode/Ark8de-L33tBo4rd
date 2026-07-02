@@ -28,21 +28,25 @@ import (
 
 // Sentinel errors — named error values callers can check with errors.Is().
 var (
-	ErrInvalidClassRole      = errors.New("class_role must be one of: tank, dps, healer, support")
-	ErrSkillNotFound         = errors.New("one or more skill IDs do not exist")
-	ErrSkillWrongClass       = errors.New("all skills must match your current class_role")
-	ErrInsufficientSkillPts  = errors.New("not enough skill points — reduce your skill selection")
-	ErrGearNotFound          = errors.New("one or more gear type IDs do not exist")
-	ErrInvalidAmount         = errors.New("amount must be greater than 0")
-	ErrInsufficientKredits   = errors.New("insufficient Kredit balance")
-	ErrNoClassSet            = errors.New("you must set a class_role before allocating skills")
-	ErrPlayerNotFound        = errors.New("player not found")
-	ErrCannotTransferToSelf  = errors.New("cannot transfer Kredits to yourself")
+	ErrInvalidClassRole     = errors.New("class_role must be one of: smartass, ninja, psycho, hacker, merkava, kommando")
+	ErrSkillNotFound        = errors.New("one or more skill IDs do not exist")
+	ErrSkillWrongClass      = errors.New("all skills must match your current class_role")
+	ErrTierAboveLevel       = errors.New("skill tier exceeds your current level")
+	ErrOneSkillPerTier      = errors.New("you can hold only one skill per tier — blue or red, never both")
+	ErrInvalidLevel         = errors.New("level must be between 1 and 3")
+	ErrGearNotFound         = errors.New("one or more gear type IDs do not exist")
+	ErrGearClassRestricted  = errors.New("your class cannot equip this gear")
+	ErrInvalidAmount        = errors.New("amount must be greater than 0")
+	ErrInsufficientKredits  = errors.New("insufficient Kredit balance")
+	ErrNoClassSet           = errors.New("you must set a class_role before allocating skills")
+	ErrPlayerNotFound       = errors.New("player not found")
+	ErrCannotTransferToSelf = errors.New("cannot transfer Kredits to yourself")
 )
 
-// validClassRoles is the set of allowed class_role values, matching the DB CHECK constraint.
+// validClassRoles is the set of allowed archetypes, matching the DB CHECK constraint.
 var validClassRoles = map[string]bool{
-	"tank": true, "dps": true, "healer": true, "support": true,
+	"smartass": true, "ninja": true, "psycho": true,
+	"hacker": true, "merkava": true, "kommando": true,
 }
 
 // Repository defines the data-access methods that PlayerService needs.
@@ -56,7 +60,8 @@ var validClassRoles = map[string]bool{
 type Repository interface {
 	GetPublicProfile(ctx context.Context, playerID string) (*PublicPlayerResponse, error)
 	UpdateClassRole(ctx context.Context, playerID, classRole string) error
-	GetPlayerCore(ctx context.Context, playerID string) (classRole *string, skillPointsTotal int, err error)
+	GetPlayerCore(ctx context.Context, playerID string) (classRole *string, level int, passiveHPBonus int, err error)
+	SetPlayerLevel(ctx context.Context, playerID string, level int) error
 	GetPlayerSkills(ctx context.Context, playerID string) ([]Skill, error)
 	GetPlayerGear(ctx context.Context, playerID string) ([]GearType, error)
 	GetTeamGearPointsUsed(ctx context.Context, playerID string) (teamTotal, teamUsed int, err error)
@@ -119,15 +124,16 @@ func (s *PlayerService) SetClass(ctx context.Context, playerID, classRole string
 
 // GetStats computes and returns a player's current combat stats.
 // Nothing is stored — these are always derived from the current DB state.
+// HP = BaseHP (3) + archetype passive bonus + permanent skill bonuses.
 func (s *PlayerService) GetStats(ctx context.Context, playerID string) (*StatsResponse, error) {
-	classRole, skillPointsTotal, err := s.repo.GetPlayerCore(ctx, playerID)
+	classRole, level, passiveHP, err := s.repo.GetPlayerCore(ctx, playerID)
 	if err != nil {
 		return nil, fmt.Errorf("PlayerService.GetStats: %w", err)
 	}
 
 	resp := &StatsResponse{
-		ClassRole:        classRole,
-		SkillPointsTotal: skillPointsTotal,
+		ClassRole: classRole,
+		Level:     level,
 	}
 
 	// If the player hasn't chosen a class yet, return zeroed combat stats.
@@ -135,22 +141,16 @@ func (s *PlayerService) GetStats(ctx context.Context, playerID string) (*StatsRe
 		return resp, nil
 	}
 
-	// Base stats from class.
-	resp.HealthPoints = classBaseHP[*classRole]
-	resp.ArmorPoints = classBaseArmor[*classRole]
+	resp.HealthPoints = BaseHP + passiveHP
 
-	// Add bonuses from allocated skills.
+	// Add permanent bonuses from held skills (e.g. merkava's Fridge).
 	skills, err := s.repo.GetPlayerSkills(ctx, playerID)
 	if err != nil {
 		return nil, fmt.Errorf("PlayerService.GetStats: skills: %w", err)
 	}
-	spentPoints := 0
 	for _, sk := range skills {
 		resp.HealthPoints += sk.HPBonus
-		resp.ArmorPoints += sk.ArmorBonus
-		spentPoints += sk.CostSkillPoints
 	}
-	resp.SkillPointsRemaining = skillPointsTotal - spentPoints
 
 	// Gear points used by this player (their own gear selections only).
 	gear, err := s.repo.GetPlayerGear(ctx, playerID)
@@ -164,9 +164,9 @@ func (s *PlayerService) GetStats(ctx context.Context, playerID string) (*StatsRe
 	return resp, nil
 }
 
-// GetSkills returns the player's currently allocated skills and their remaining point budget.
+// GetSkills returns the player's currently allocated skills and their level.
 func (s *PlayerService) GetSkills(ctx context.Context, playerID string) (*SkillsResponse, error) {
-	classRole, skillPointsTotal, err := s.repo.GetPlayerCore(ctx, playerID)
+	_, level, _, err := s.repo.GetPlayerCore(ctx, playerID)
 	if err != nil {
 		return nil, fmt.Errorf("PlayerService.GetSkills: %w", err)
 	}
@@ -175,24 +175,23 @@ func (s *PlayerService) GetSkills(ctx context.Context, playerID string) (*Skills
 	if err != nil {
 		return nil, fmt.Errorf("PlayerService.GetSkills: %w", err)
 	}
-
-	spentPoints := 0
-	for _, sk := range skills {
-		spentPoints += sk.CostSkillPoints
+	if skills == nil {
+		skills = []Skill{}
 	}
 
-	_ = classRole // available for future validation
 	return &SkillsResponse{
-		AllocatedSkills:      skills,
-		SkillPointsTotal:     skillPointsTotal,
-		SkillPointsRemaining: skillPointsTotal - spentPoints,
+		AllocatedSkills: skills,
+		Level:           level,
 	}, nil
 }
 
 // SetSkills replaces the player's entire skill allocation.
-// All requested skills must exist, belong to the player's class, and fit within the budget.
+// Rules (from the archetype sheet):
+//   - every skill must belong to the player's archetype
+//   - a skill of tier N requires player level >= N
+//   - at most ONE skill per tier — blue or red, never both
 func (s *PlayerService) SetSkills(ctx context.Context, playerID string, req SetSkillsRequest) error {
-	classRole, skillPointsTotal, err := s.repo.GetPlayerCore(ctx, playerID)
+	classRole, level, _, err := s.repo.GetPlayerCore(ctx, playerID)
 	if err != nil {
 		return fmt.Errorf("PlayerService.SetSkills: %w", err)
 	}
@@ -211,27 +210,51 @@ func (s *PlayerService) SetSkills(ctx context.Context, playerID string, req SetS
 		return fmt.Errorf("PlayerService.SetSkills: fetch skills: %w", err)
 	}
 
-	// Verify all requested IDs were found.
+	// Verify all requested IDs were found (duplicates collapse and fail here too).
 	if len(skills) != len(req.SkillIDs) {
 		return ErrSkillNotFound
 	}
 
-	// Verify all skills match the player's current class.
-	totalCost := 0
+	seenTier := map[int]string{} // tier → skill name already claiming it
 	for _, sk := range skills {
 		if sk.ClassRole != *classRole {
 			return fmt.Errorf("%w: skill %q belongs to class %q, you are %q",
 				ErrSkillWrongClass, sk.Name, sk.ClassRole, *classRole)
 		}
-		totalCost += sk.CostSkillPoints
-	}
-
-	// Verify the player has enough skill points.
-	if totalCost > skillPointsTotal {
-		return fmt.Errorf("%w: need %d, have %d", ErrInsufficientSkillPts, totalCost, skillPointsTotal)
+		if sk.Tier > level {
+			return fmt.Errorf("%w: %q is tier %d, you are level %d",
+				ErrTierAboveLevel, sk.Name, sk.Tier, level)
+		}
+		if other, taken := seenTier[sk.Tier]; taken {
+			return fmt.Errorf("%w: tier %d has both %q and %q",
+				ErrOneSkillPerTier, sk.Tier, other, sk.Name)
+		}
+		seenTier[sk.Tier] = sk.Name
 	}
 
 	return s.repo.SetPlayerSkills(ctx, playerID, req.SkillIDs)
+}
+
+// SetLevel updates a player's level (moderator/admin only — enforced by
+// middleware in the handler). Lowering a level prunes skill allocations
+// whose tier is now out of reach.
+func (s *PlayerService) SetLevel(ctx context.Context, playerID string, req SetLevelRequest) error {
+	if req.Level < 1 || req.Level > MaxLevel {
+		return ErrInvalidLevel
+	}
+
+	exists, err := s.repo.PlayerExists(ctx, playerID)
+	if err != nil {
+		return fmt.Errorf("PlayerService.SetLevel: %w", err)
+	}
+	if !exists {
+		return ErrPlayerNotFound
+	}
+
+	if err := s.repo.SetPlayerLevel(ctx, playerID, req.Level); err != nil {
+		return fmt.Errorf("PlayerService.SetLevel: %w", err)
+	}
+	return nil
 }
 
 // GetGear returns the player's current gear selections and team gear pool info.
@@ -261,8 +284,9 @@ func (s *PlayerService) GetGear(ctx context.Context, playerID string) (*GearResp
 }
 
 // SetGear replaces the player's entire gear selection.
-// All requested gear type IDs must exist. Gear can exceed the team budget
-// (it's allowed but flagged as negative on the UI).
+// All requested gear type IDs must exist, and class-restricted items
+// (spear/long weapon, shield, power balls) must be legal for the player's
+// archetype. Gear can exceed the team budget (allowed but flagged red).
 func (s *PlayerService) SetGear(ctx context.Context, playerID string, req SetGearRequest) error {
 	if len(req.GearTypeIDs) > 0 {
 		gear, err := s.repo.GetGearTypesByIDs(ctx, req.GearTypeIDs)
@@ -271,6 +295,28 @@ func (s *PlayerService) SetGear(ctx context.Context, playerID string, req SetGea
 		}
 		if len(gear) != len(req.GearTypeIDs) {
 			return ErrGearNotFound
+		}
+
+		classRole, _, _, err := s.repo.GetPlayerCore(ctx, playerID)
+		if err != nil {
+			return fmt.Errorf("PlayerService.SetGear: %w", err)
+		}
+		for _, g := range gear {
+			if len(g.RestrictedTo) == 0 {
+				continue // unrestricted item
+			}
+			allowed := false
+			if classRole != nil {
+				for _, cls := range g.RestrictedTo {
+					if cls == *classRole {
+						allowed = true
+						break
+					}
+				}
+			}
+			if !allowed {
+				return fmt.Errorf("%w: %q is limited to %v", ErrGearClassRestricted, g.Name, g.RestrictedTo)
+			}
 		}
 	}
 	if err := s.repo.SetPlayerGear(ctx, playerID, req.GearTypeIDs); err != nil {

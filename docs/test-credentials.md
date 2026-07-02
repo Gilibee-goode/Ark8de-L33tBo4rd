@@ -6,19 +6,19 @@ All accounts are created by the seed script: `task seed` (from `monolith/`).
 
 ## Quick Reference
 
-| Account          | Email                        | Password      | Role         | Class   | Team        |
-|------------------|------------------------------|---------------|--------------|---------|-------------|
-| admin            | admin@ark8de.dev             | Admin1234!    | admin        | --      | --          |
-| moderator        | moderator@ark8de.dev         | Mod1234!      | moderator    | --      | --          |
-| alpha_captain    | alpha.captain@ark8de.dev     | Alpha1234!    | team_owner   | tank    | Team Alpha  |
-| alpha_healer     | alpha.healer@ark8de.dev      | Alpha1234!    | player       | healer  | Team Alpha  |
-| alpha_dps        | alpha.dps@ark8de.dev         | Alpha1234!    | player       | dps     | Team Alpha  |
-| alpha_support    | alpha.support@ark8de.dev     | Alpha1234!    | player       | support | Team Alpha  |
-| beta_captain     | beta.captain@ark8de.dev      | Beta1234!     | team_owner   | dps     | Team Beta   |
-| beta_tank        | beta.tank@ark8de.dev         | Beta1234!     | player       | tank    | Team Beta   |
-| beta_healer      | beta.healer@ark8de.dev       | Beta1234!     | player       | healer  | Team Beta   |
-| beta_support     | beta.support@ark8de.dev      | Beta1234!     | player       | support | Team Beta   |
-| lone_wolf        | lone.wolf@ark8de.dev         | Wolf1234!     | player       | dps     | (none)      |
+| Account          | Email                        | Password      | Role         | Class    | Lvl | Team        |
+|------------------|------------------------------|---------------|--------------|----------|-----|-------------|
+| admin            | admin@ark8de.dev             | Admin1234!    | admin        | --       | 1   | --          |
+| moderator        | moderator@ark8de.dev         | Mod1234!      | moderator    | --       | 1   | --          |
+| alpha_captain    | alpha.captain@ark8de.dev     | Alpha1234!    | team_owner   | merkava  | 3   | Team Alpha  |
+| alpha_ninja      | alpha.ninja@ark8de.dev       | Alpha1234!    | player       | ninja    | 2   | Team Alpha  |
+| alpha_psycho     | alpha.psycho@ark8de.dev      | Alpha1234!    | player       | psycho   | 1   | Team Alpha  |
+| alpha_hacker     | alpha.hacker@ark8de.dev      | Alpha1234!    | player       | hacker   | 3   | Team Alpha  |
+| beta_captain     | beta.captain@ark8de.dev      | Beta1234!     | team_owner   | kommando | 3   | Team Beta   |
+| beta_smartass    | beta.smartass@ark8de.dev     | Beta1234!     | player       | smartass | 2   | Team Beta   |
+| beta_merkava     | beta.merkava@ark8de.dev      | Beta1234!     | player       | merkava  | 1   | Team Beta   |
+| beta_ninja       | beta.ninja@ark8de.dev        | Beta1234!     | player       | ninja    | 1   | Team Beta   |
+| lone_wolf        | lone.wolf@ark8de.dev         | Wolf1234!     | player       | psycho   | 2   | (none)      |
 
 ---
 
@@ -45,7 +45,7 @@ curl -s http://localhost:8080/auth/me \
 
 ## What Each Role Can Access
 
-### player (alpha_healer, alpha_dps, alpha_support, beta_tank, beta_healer, beta_support, lone_wolf)
+### player (alpha_ninja, alpha_psycho, alpha_hacker, beta_smartass, beta_merkava, beta_ninja, lone_wolf)
 
 | Area                    | Routes                                               |
 |-------------------------|------------------------------------------------------|
@@ -93,8 +93,8 @@ Everything above, plus:
 
 | Scenario                     | Log in as                         | What you'll see                               |
 |------------------------------|-----------------------------------|-----------------------------------------------|
-| Over budget (red warning)    | Any Team Alpha member             | Team gear pool = 15/12 (3 over, shown in red) |
-| Under budget (healthy green) | Any Team Beta member              | Team gear pool = 9/12 (3 remaining, green)    |
+| Over budget (red warning)    | Any Team Alpha member             | Team gear pool = 17/16 (1 over; 12 base +4 from Grid is Good) |
+| Under budget (healthy green) | Any Team Beta member              | Team gear pool = 8/12 (4 remaining, green)    |
 
 ### Testing team ownership actions
 
@@ -119,7 +119,7 @@ Everything above, plus:
 |--------------------------------|--------------------|-----------------------------------------|
 | Browse leaderboard             | lone_wolf          | Public — no auth needed either          |
 | Send a join request            | lone_wolf          | `POST /api/teams/{id}/join-requests`    |
-| Set class / skills / gear      | lone_wolf          | Already has class=dps, no team gear pool |
+| Set class / skills / gear      | lone_wolf          | psycho lvl 2, no team gear pool          |
 
 ### Testing permission boundaries (expect 403 Forbidden)
 
@@ -128,7 +128,8 @@ Everything above, plus:
 | Award points                   | alpha_captain      | 403 — only moderator/admin               |
 | Grant kredits                  | lone_wolf          | 403 — only moderator/admin               |
 | Edit another player's team     | beta_captain       | 403 — can only manage own team           |
-| Access `/mod` panel            | alpha_dps          | 403 — player role                        |
+| Access `/mod` panel            | alpha_ninja        | 403 — player role                        |
+| Set a player's level           | beta_captain       | 403 — only moderator/admin               |
 
 ### Testing without authentication (expect 401 Unauthorized)
 
@@ -145,8 +146,8 @@ Everything above, plus:
 
 | Data              | Team Alpha                          | Team Beta                           |
 |-------------------|-------------------------------------|-------------------------------------|
-| Members           | 4 (all classes represented)         | 4 (all classes represented)         |
-| Gear budget used  | 15 / 12 (over)                      | 9 / 12 (under)                      |
+| Members           | 4 (merkava/ninja/psycho/hacker)     | 4 (kommando/smartass/merkava/ninja) |
+| Gear budget used  | 17 / 16 (over; +4 from Grid is Good) | 8 / 12 (under)                     |
 | Arkade points     | 50 (25 + 10 + 15)                   | 25 (30 - 5)                         |
 | Skills allocated  | Yes (varies per player)             | Yes (varies per player)             |
-| Starting kredits  | Default (100 each)                  | Default (100 each)                  |
+| Starting kredits  | 0 (grant via moderator)             | 0 (grant via moderator)             |

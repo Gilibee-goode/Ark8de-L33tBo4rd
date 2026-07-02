@@ -481,6 +481,15 @@ thead th {
   font-weight: 600;
 }
 
+/* Skill-tree branch colors (blue/red branches from the archetype sheet) */
+.branch-blue {
+  color: #4da6ff;
+}
+
+.branch-red {
+  color: #ff5c5c;
+}
+
 .skill-desc {
   font-size: 0.84rem;
   color: var(--text-muted);

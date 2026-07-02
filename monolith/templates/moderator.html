@@ -73,5 +73,31 @@
         </form>
     </div>
 
+    <!-- Set Player Level -->
+    <div class="card">
+        <h2>Set Player Level</h2>
+        <p class="muted" style="margin-bottom: 1rem;">
+            Level gates skill tiers (1–3). Lowering a level removes skills the player no longer qualifies for.
+        </p>
+        <form method="POST" action="/mod/set-level">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+            <div class="form-group">
+                <label for="level-player-id-input">Player ID (UUID)</label>
+                <input type="text" id="level-player-id-input" name="player_id" class="form-control"
+                       placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+            </div>
+            <div class="form-group">
+                <label for="level-input">Level</label>
+                <select id="level-input" name="level" class="form-control">
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                </select>
+            </div>
+            <button type="submit" class="btn">Set Level</button>
+        </form>
+    </div>
+
 </div>
 {{end}}

@@ -116,7 +116,8 @@ func (h *PlayerHandler) SetSkills(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, ErrNoClassSet),
 			errors.Is(err, ErrSkillNotFound),
 			errors.Is(err, ErrSkillWrongClass),
-			errors.Is(err, ErrInsufficientSkillPts):
+			errors.Is(err, ErrTierAboveLevel),
+			errors.Is(err, ErrOneSkillPerTier):
 			respond.Error(w, http.StatusBadRequest, err.Error())
 		default:
 			slog.Error("PlayerHandler.SetSkills: unexpected error", "error", err)
@@ -153,7 +154,7 @@ func (h *PlayerHandler) SetGear(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.SetGear(r.Context(), playerID, req); err != nil {
-		if errors.Is(err, ErrGearNotFound) {
+		if errors.Is(err, ErrGearNotFound) || errors.Is(err, ErrGearClassRestricted) {
 			respond.Error(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -162,6 +163,32 @@ func (h *PlayerHandler) SetGear(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond.JSON(w, http.StatusOK, map[string]string{"status": "gear updated"})
+}
+
+// SetLevel handles PUT /players/:id/level — moderator/admin only.
+// Sets a player's level (1–3); leveling down prunes now-illegal skills.
+func (h *PlayerHandler) SetLevel(w http.ResponseWriter, r *http.Request) {
+	playerID := chi.URLParam(r, "id")
+
+	var req SetLevelRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respond.Error(w, http.StatusBadRequest, "invalid request body — expected {\"level\": 2}")
+		return
+	}
+
+	if err := h.service.SetLevel(r.Context(), playerID, req); err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidLevel):
+			respond.Error(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, ErrPlayerNotFound):
+			respond.Error(w, http.StatusNotFound, err.Error())
+		default:
+			slog.Error("PlayerHandler.SetLevel: unexpected error", "error", err)
+			respond.Error(w, http.StatusInternalServerError, "failed to set level")
+		}
+		return
+	}
+	respond.JSON(w, http.StatusOK, map[string]string{"status": "level updated"})
 }
 
 // GetKredits handles GET /players/me/kredits

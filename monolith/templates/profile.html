@@ -25,12 +25,8 @@
                 <span class="stat-value">{{.Stats.HealthPoints}}</span>
             </div>
             <div class="stat-item">
-                <span class="stat-label">Armor</span>
-                <span class="stat-value">{{.Stats.ArmorPoints}}</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Skill Points</span>
-                <span class="stat-value">{{.Stats.SkillPointsRemaining}} / {{.Stats.SkillPointsTotal}}</span>
+                <span class="stat-label">Level</span>
+                <span class="stat-value">{{.Stats.Level}}</span>
             </div>
             <div class="stat-item">
                 <span class="stat-label">Gear Points Used</span>
@@ -38,7 +34,7 @@
             </div>
         </div>
         {{else}}
-        <p class="muted">Set your class to see combat stats.</p>
+        <p class="muted">Set your archetype to see combat stats.</p>
         {{end}}
     </div>
 
@@ -81,14 +77,14 @@
         <h2>Skills</h2>
         {{if .Skills.AllocatedSkills}}
         <p class="muted" style="margin-bottom: 0.75rem;">
-            {{.Skills.SkillPointsRemaining}} / {{.Skills.SkillPointsTotal}} skill points remaining
+            Level {{.Skills.Level}} — one skill per tier, blue or red
         </p>
         <ul class="skill-list">
         {{range .Skills.AllocatedSkills}}
             <li class="skill-item">
                 <div class="skill-header">
                     <span class="skill-name">{{.Name}}</span>
-                    <span class="skill-cost">{{.CostSkillPoints}} SP</span>
+                    <span class="skill-cost branch-{{.Branch}}">Tier {{.Tier}} · {{.Branch}}</span>
                 </div>
                 <p class="skill-desc">{{.Description}}</p>
             </li>

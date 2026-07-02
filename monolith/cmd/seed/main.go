@@ -6,25 +6,28 @@
 // Run with: go run ./cmd/seed  (from the monolith/ directory)
 // Or:        task seed
 //
+// Skills and the weapon catalog are seeded by migration 000014 — this script
+// only creates accounts, teams, allocations, gear picks, and Arkade points.
+//
 // SEED CREDENTIALS:
 //
 //	Admin:      username=admin,          email=admin@ark8de.dev,        password=Admin1234!
 //	Moderator:  username=moderator,      email=moderator@ark8de.dev,    password=Mod1234!
 //
 //	Team Alpha (over gear budget — gear pool will show red):
-//	  Owner:  username=alpha_captain,  email=alpha.captain@ark8de.dev,  password=Alpha1234!  (tank)
-//	  Member: username=alpha_healer,   email=alpha.healer@ark8de.dev,   password=Alpha1234!  (healer)
-//	  Member: username=alpha_dps,      email=alpha.dps@ark8de.dev,      password=Alpha1234!  (dps)
-//	  Member: username=alpha_support,  email=alpha.support@ark8de.dev,  password=Alpha1234!  (support)
+//	  Owner:  username=alpha_captain,  email=alpha.captain@ark8de.dev,  password=Alpha1234!  (merkava, lvl 3)
+//	  Member: username=alpha_ninja,    email=alpha.ninja@ark8de.dev,    password=Alpha1234!  (ninja,   lvl 2)
+//	  Member: username=alpha_psycho,   email=alpha.psycho@ark8de.dev,   password=Alpha1234!  (psycho,  lvl 1)
+//	  Member: username=alpha_hacker,   email=alpha.hacker@ark8de.dev,   password=Alpha1234!  (hacker,  lvl 3)
 //
 //	Team Beta (under gear budget — gear pool shows green):
-//	  Owner:  username=beta_captain,   email=beta.captain@ark8de.dev,   password=Beta1234!   (dps)
-//	  Member: username=beta_tank,      email=beta.tank@ark8de.dev,      password=Beta1234!   (tank)
-//	  Member: username=beta_healer,    email=beta.healer@ark8de.dev,    password=Beta1234!   (healer)
-//	  Member: username=beta_support,   email=beta.support@ark8de.dev,   password=Beta1234!   (support)
+//	  Owner:  username=beta_captain,   email=beta.captain@ark8de.dev,   password=Beta1234!   (kommando, lvl 3)
+//	  Member: username=beta_smartass,  email=beta.smartass@ark8de.dev,  password=Beta1234!   (smartass, lvl 2)
+//	  Member: username=beta_merkava,   email=beta.merkava@ark8de.dev,   password=Beta1234!   (merkava,  lvl 1)
+//	  Member: username=beta_ninja,     email=beta.ninja@ark8de.dev,     password=Beta1234!   (ninja,    lvl 1)
 //
 //	Lone wolf (no team):
-//	  username=lone_wolf, email=lone.wolf@ark8de.dev, password=Wolf1234!
+//	  username=lone_wolf, email=lone.wolf@ark8de.dev, password=Wolf1234!  (psycho, lvl 2)
 package main
 
 import (
@@ -63,11 +66,7 @@ func main() {
 	slog.Info("connected to database, starting seed...")
 
 	// Run each section in order. If any fails, we abort.
-	if err := seedSkills(ctx, pool); err != nil {
-		slog.Error("failed to seed skills", "error", err)
-		os.Exit(1)
-	}
-
+	// (Skills + weapon catalog are reference data seeded by migration 000014.)
 	playerIDs, err := seedPlayers(ctx, pool)
 	if err != nil {
 		slog.Error("failed to seed players", "error", err)
@@ -108,13 +107,13 @@ type playerIDs struct {
 	admin        string
 	moderator    string
 	alphaCaptain string
-	alphaHealer  string
-	alphaDPS     string
-	alphaSupport string
+	alphaNinja   string
+	alphaPsycho  string
+	alphaHacker  string
 	betaCaptain  string
-	betaTank     string
-	betaHealer   string
-	betaSupport  string
+	betaSmartass string
+	betaMerkava  string
+	betaNinja    string
 	loneWolf     string
 }
 
@@ -175,15 +174,15 @@ func seedPlayers(ctx context.Context, pool *pgxpool.Pool) (*playerIDs, error) {
 	if err != nil {
 		return nil, err
 	}
-	ids.alphaHealer, err = createPlayer(ctx, pool, "alpha_healer", "alpha.healer@ark8de.dev", "Alpha1234!", "player")
+	ids.alphaNinja, err = createPlayer(ctx, pool, "alpha_ninja", "alpha.ninja@ark8de.dev", "Alpha1234!", "player")
 	if err != nil {
 		return nil, err
 	}
-	ids.alphaDPS, err = createPlayer(ctx, pool, "alpha_dps", "alpha.dps@ark8de.dev", "Alpha1234!", "player")
+	ids.alphaPsycho, err = createPlayer(ctx, pool, "alpha_psycho", "alpha.psycho@ark8de.dev", "Alpha1234!", "player")
 	if err != nil {
 		return nil, err
 	}
-	ids.alphaSupport, err = createPlayer(ctx, pool, "alpha_support", "alpha.support@ark8de.dev", "Alpha1234!", "player")
+	ids.alphaHacker, err = createPlayer(ctx, pool, "alpha_hacker", "alpha.hacker@ark8de.dev", "Alpha1234!", "player")
 	if err != nil {
 		return nil, err
 	}
@@ -193,15 +192,15 @@ func seedPlayers(ctx context.Context, pool *pgxpool.Pool) (*playerIDs, error) {
 	if err != nil {
 		return nil, err
 	}
-	ids.betaTank, err = createPlayer(ctx, pool, "beta_tank", "beta.tank@ark8de.dev", "Beta1234!", "player")
+	ids.betaSmartass, err = createPlayer(ctx, pool, "beta_smartass", "beta.smartass@ark8de.dev", "Beta1234!", "player")
 	if err != nil {
 		return nil, err
 	}
-	ids.betaHealer, err = createPlayer(ctx, pool, "beta_healer", "beta.healer@ark8de.dev", "Beta1234!", "player")
+	ids.betaMerkava, err = createPlayer(ctx, pool, "beta_merkava", "beta.merkava@ark8de.dev", "Beta1234!", "player")
 	if err != nil {
 		return nil, err
 	}
-	ids.betaSupport, err = createPlayer(ctx, pool, "beta_support", "beta.support@ark8de.dev", "Beta1234!", "player")
+	ids.betaNinja, err = createPlayer(ctx, pool, "beta_ninja", "beta.ninja@ark8de.dev", "Beta1234!", "player")
 	if err != nil {
 		return nil, err
 	}
@@ -212,22 +211,25 @@ func seedPlayers(ctx context.Context, pool *pgxpool.Pool) (*playerIDs, error) {
 		return nil, err
 	}
 
-	// Set class roles on all players.
-	classMap := map[string]string{
-		ids.alphaCaptain: "tank",
-		ids.alphaHealer:  "healer",
-		ids.alphaDPS:     "dps",
-		ids.alphaSupport: "support",
-		ids.betaCaptain:  "dps",
-		ids.betaTank:     "tank",
-		ids.betaHealer:   "healer",
-		ids.betaSupport:  "support",
-		ids.loneWolf:     "dps",
+	// Set archetype + level on all players. All 6 archetypes are represented.
+	classMap := map[string]struct {
+		class string
+		level int
+	}{
+		ids.alphaCaptain: {"merkava", 3},
+		ids.alphaNinja:   {"ninja", 2},
+		ids.alphaPsycho:  {"psycho", 1},
+		ids.alphaHacker:  {"hacker", 3},
+		ids.betaCaptain:  {"kommando", 3},
+		ids.betaSmartass: {"smartass", 2},
+		ids.betaMerkava:  {"merkava", 1},
+		ids.betaNinja:    {"ninja", 1},
+		ids.loneWolf:     {"psycho", 2},
 	}
-	for playerID, class := range classMap {
+	for playerID, pc := range classMap {
 		if _, err := pool.Exec(ctx,
-			`UPDATE players SET class_role = $1 WHERE id = $2::uuid`,
-			class, playerID,
+			`UPDATE players SET class_role = $1, level = $2 WHERE id = $3::uuid`,
+			pc.class, pc.level, playerID,
 		); err != nil {
 			return nil, fmt.Errorf("set class for %s: %w", playerID, err)
 		}
@@ -301,13 +303,13 @@ func createTeam(ctx context.Context, pool *pgxpool.Pool, name, tag, ownerID stri
 // seedTeams creates Team Alpha and Team Beta with their rosters.
 func seedTeams(ctx context.Context, pool *pgxpool.Pool, ids *playerIDs) error {
 	_, err := createTeam(ctx, pool, "Team Alpha", "ALPHA", ids.alphaCaptain,
-		[]string{ids.alphaHealer, ids.alphaDPS, ids.alphaSupport})
+		[]string{ids.alphaNinja, ids.alphaPsycho, ids.alphaHacker})
 	if err != nil {
 		return fmt.Errorf("seedTeams alpha: %w", err)
 	}
 
 	_, err = createTeam(ctx, pool, "Team Beta", "BETA", ids.betaCaptain,
-		[]string{ids.betaTank, ids.betaHealer, ids.betaSupport})
+		[]string{ids.betaSmartass, ids.betaMerkava, ids.betaNinja})
 	if err != nil {
 		return fmt.Errorf("seedTeams beta: %w", err)
 	}
@@ -315,85 +317,32 @@ func seedTeams(ctx context.Context, pool *pgxpool.Pool, ids *playerIDs) error {
 	return nil
 }
 
-// seedSkills inserts 4 skills per class (16 total). Safe to re-run (skips existing).
-func seedSkills(ctx context.Context, pool *pgxpool.Pool) error {
-	// Each entry: name, description, class_role, cost, effect_description, effect_type, hp_bonus, armor_bonus
-	skills := []struct {
-		name, desc, class, effectDesc, effectType string
-		cost, hp, armor                           int
-	}{
-		// Tank skills
-		{"Iron Wall", "Brace for impact, hardening your defences", "tank", "+15 armor points", "passive", 3, 0, 15},
-		{"Battle Hardened", "Years of combat have thickened your hide", "tank", "+30 HP", "passive", 5, 30, 0},
-		{"Shield Mastery", "Master your shield to absorb devastating blows", "tank", "+20 HP and +20 armor", "active", 7, 20, 20},
-		{"Fortress", "You become an immovable wall in battle", "tank", "+50 HP and +25 armor", "passive", 10, 50, 25},
-
-		// DPS skills
-		{"Quick Reflexes", "Dodge incoming blows with lightning speed", "dps", "+20 HP", "passive", 3, 20, 0},
-		{"Battle Fury", "Channel rage into devastating strikes", "dps", "+30 HP and +5 armor", "active", 5, 30, 5},
-		{"Deadly Focus", "Laser precision in the heat of combat", "dps", "+15 armor points", "passive", 7, 0, 15},
-		{"Glass Cannon", "Maximum offence, minimum defence", "dps", "+60 HP", "passive", 10, 60, 0},
-
-		// Healer skills
-		{"First Aid", "Patch wounds mid-combat", "healer", "+25 HP", "passive", 3, 25, 0},
-		{"Combat Medic", "Keep fighting while keeping allies alive", "healer", "+35 HP", "active", 5, 35, 0},
-		{"Barrier Shield", "Conjure a protective barrier", "healer", "+15 HP and +20 armor", "active", 7, 15, 20},
-		{"Divine Blessing", "Divine protection surrounds you", "healer", "+60 HP and +15 armor", "passive", 10, 60, 15},
-
-		// Support skills
-		{"Battle Cry", "Rally your team with a mighty roar", "support", "+20 HP and +5 armor", "passive", 3, 20, 5},
-		{"Tactical Awareness", "Anticipate enemy movements before they happen", "support", "+25 HP and +10 armor", "passive", 5, 25, 10},
-		{"Coordination", "Synchronise attacks with perfect timing", "support", "+30 HP and +15 armor", "active", 7, 30, 15},
-		{"Master Tactician", "Command the battlefield from within it", "support", "+50 HP and +25 armor", "passive", 10, 50, 25},
-	}
-
-	for _, s := range skills {
-		// Skip if already exists.
-		var exists bool
-		if err := pool.QueryRow(ctx,
-			`SELECT EXISTS(SELECT 1 FROM skills WHERE name = $1 AND class_role = $2)`,
-			s.name, s.class,
-		).Scan(&exists); err != nil {
-			return err
-		}
-		if exists {
-			continue
-		}
-
-		if _, err := pool.Exec(ctx, `
-			INSERT INTO skills (name, description, class_role, cost_skill_points,
-			                    effect_description, effect_type, hp_bonus, armor_bonus)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-			s.name, s.desc, s.class, s.cost, s.effectDesc, s.effectType, s.hp, s.armor,
-		); err != nil {
-			return fmt.Errorf("insert skill %s: %w", s.name, err)
-		}
-	}
-
-	slog.Info("skills seeded", "count", 16)
-	return nil
+// pick identifies one skill-tree node: which branch to take at which tier.
+type pick struct {
+	branch string // "blue" or "red"
+	tier   int
 }
 
-// seedSkillAllocations gives each player some allocated skills.
+// seedSkillAllocations gives each player skills following the real rules:
+// one skill per tier (blue OR red), tiers up to the player's level.
 func seedSkillAllocations(ctx context.Context, pool *pgxpool.Pool, ids *playerIDs) error {
-	// Map: playerID → class → skill names to allocate
-	// Budget = 20 skill points per player.
 	allocations := map[string]struct {
-		class  string
-		skills []string // allocate these by name
+		class string
+		picks []pick
 	}{
-		ids.alphaCaptain: {"tank", []string{"Iron Wall", "Battle Hardened"}},       // 3+5=8 pts
-		ids.alphaHealer:  {"healer", []string{"First Aid", "Combat Medic"}},        // 3+5=8 pts
-		ids.alphaDPS:     {"dps", []string{"Quick Reflexes", "Glass Cannon"}},      // 3+10=13 pts
-		ids.alphaSupport: {"support", []string{"Battle Cry", "Coordination"}},      // 3+7=10 pts
-		ids.betaCaptain:  {"dps", []string{"Battle Fury", "Deadly Focus"}},         // 5+7=12 pts
-		ids.betaTank:     {"tank", []string{"Iron Wall", "Shield Mastery"}},        // 3+7=10 pts
-		ids.betaHealer:   {"healer", []string{"First Aid", "Barrier Shield"}},      // 3+7=10 pts
-		ids.betaSupport:  {"support", []string{"Battle Cry", "Tactical Awareness"}}, // 3+5=8 pts
+		ids.alphaCaptain: {"merkava", []pick{{"blue", 1}, {"blue", 2}, {"red", 3}}},  // Fridge, Windbreaker, Brain Glitch
+		ids.alphaNinja:   {"ninja", []pick{{"blue", 1}, {"red", 2}}},                 // The Elusive, The Coward
+		ids.alphaPsycho:  {"psycho", []pick{{"blue", 1}}},                            // Basic Psychosis
+		ids.alphaHacker:  {"hacker", []pick{{"blue", 1}, {"red", 2}, {"blue", 3}}},   // Cheats, It's a Bug, Grid is Good (+4 team gear)
+		ids.betaCaptain:  {"kommando", []pick{{"red", 1}, {"blue", 2}, {"red", 3}}},  // The Pusher, Adrenaline Shot, Friend of the Quartermaster
+		ids.betaSmartass: {"smartass", []pick{{"red", 1}, {"blue", 2}}},              // The Coward, Red Bull Shot
+		ids.betaMerkava:  {"merkava", []pick{{"red", 1}}},                            // Nailed to the Floor
+		ids.loneWolf:     {"psycho", []pick{{"red", 1}, {"blue", 2}}},                // Rechargeable Batteries, Psychic Armor
+		// beta_ninja deliberately has no skills yet.
 	}
 
 	for playerID, alloc := range allocations {
-		// Check if already has allocations.
+		// Check if already has allocations (safe re-run).
 		var count int
 		if err := pool.QueryRow(ctx,
 			`SELECT COUNT(*) FROM player_skill_allocations WHERE player_id = $1::uuid`,
@@ -405,19 +354,19 @@ func seedSkillAllocations(ctx context.Context, pool *pgxpool.Pool, ids *playerID
 			continue
 		}
 
-		for _, skillName := range alloc.skills {
+		for _, p := range alloc.picks {
 			var skillID string
 			if err := pool.QueryRow(ctx,
-				`SELECT id::text FROM skills WHERE name = $1 AND class_role = $2`,
-				skillName, alloc.class,
+				`SELECT id::text FROM skills WHERE class_role = $1 AND branch = $2 AND tier = $3`,
+				alloc.class, p.branch, p.tier,
 			).Scan(&skillID); err != nil {
-				return fmt.Errorf("find skill %s for class %s: %w", skillName, alloc.class, err)
+				return fmt.Errorf("find %s %s tier %d: %w", alloc.class, p.branch, p.tier, err)
 			}
 			if _, err := pool.Exec(ctx,
 				`INSERT INTO player_skill_allocations (player_id, skill_id) VALUES ($1::uuid, $2::uuid)`,
 				playerID, skillID,
 			); err != nil {
-				return fmt.Errorf("allocate skill %s to player: %w", skillName, err)
+				return fmt.Errorf("allocate %s %s tier %d: %w", alloc.class, p.branch, p.tier, err)
 			}
 		}
 	}
@@ -426,24 +375,24 @@ func seedSkillAllocations(ctx context.Context, pool *pgxpool.Pool, ids *playerID
 	return nil
 }
 
-// seedGearSelections assigns gear to players.
-// Team Alpha deliberately goes OVER budget (pool total=12, used=15) → red warning.
-// Team Beta stays UNDER budget (pool total=12, used=9) → healthy.
+// seedGearSelections assigns weapons to players, respecting class restrictions.
+// Weapon costs: short_weapon=1, dagger=1, long_weapon=2, spear=3, bow=4,
+// pistol=4, shield=4, power_balls_x4=1.
+// Team Alpha goes OVER budget: 7+4+2+4 = 17 vs pool 12+4 (Grid is Good) = 16 → red.
+// Team Beta stays UNDER budget: 2+1+4+1 = 8 vs pool 12 → green.
 func seedGearSelections(ctx context.Context, pool *pgxpool.Pool, ids *playerIDs) error {
-	// Map: playerID → gear names to equip
-	// Gear costs: sword=2, bow_and_arrow=3, spear=4, shield=5
 	gearMap := map[string][]string{
-		// Team Alpha total: 5 + 4 + 4 + 2 = 15 → OVER budget (12)
-		ids.alphaCaptain: {"shield"},                    // 5 pts
-		ids.alphaHealer:  {"spear"},                     // 4 pts
-		ids.alphaDPS:     {"spear"},                     // 4 pts
-		ids.alphaSupport: {"sword"},                     // 2 pts
+		// Team Alpha
+		ids.alphaCaptain: {"shield", "spear"},                  // merkava — 4+3 = 7
+		ids.alphaNinja:   {"bow"},                              // ninja   — 4
+		ids.alphaPsycho:  {"power_balls_x4", "short_weapon"},   // psycho  — 1+1 = 2
+		ids.alphaHacker:  {"pistol"},                           // hacker  — 4
 
-		// Team Beta total: 2 + 3 + 2 + 2 = 9 → UNDER budget (12)
-		ids.betaCaptain:  {"sword"},                     // 2 pts
-		ids.betaTank:     {"bow_and_arrow"},              // 3 pts
-		ids.betaHealer:   {"sword"},                     // 2 pts
-		ids.betaSupport:  {"sword"},                     // 2 pts
+		// Team Beta
+		ids.betaCaptain:  {"long_weapon"},  // kommando — 2
+		ids.betaSmartass: {"dagger"},       // smartass — 1
+		ids.betaMerkava:  {"shield"},       // merkava  — 4
+		ids.betaNinja:    {"short_weapon"}, // ninja    — 1
 	}
 
 	for playerID, gearNames := range gearMap {

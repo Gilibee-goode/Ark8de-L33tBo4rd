@@ -107,12 +107,12 @@ func init() {
 // Tests can override specific fields after calling this.
 func makeTestPlayer() *Player {
 	return &Player{
-		ID:               "test-player-id",
-		Username:         "testuser",
-		Email:            "test@example.com",
-		PasswordHash:     testPasswordHash,
-		Role:             "player",
-		SkillPointsTotal: 20,
+		ID:           "test-player-id",
+		Username:     "testuser",
+		Email:        "test@example.com",
+		PasswordHash: testPasswordHash,
+		Role:         "player",
+		Level:        1,
 	}
 }
 

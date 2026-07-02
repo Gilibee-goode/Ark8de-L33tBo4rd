@@ -21,7 +21,11 @@ func (c *capturePublisher) Publish(_ context.Context, subject string, payload an
 }
 
 func TestSetGear_PublishesGearUpdatedEvent(t *testing.T) {
+	kommando := "kommando"
 	repo := &mockRepository{
+		getPlayerCoreFn: func(ctx context.Context, playerID string) (*string, int, int, error) {
+			return &kommando, 1, 0, nil
+		},
 		getGearTypesByIDsFn: func(ctx context.Context, ids []string) ([]GearType, error) {
 			return []GearType{{ID: "gear-1"}}, nil
 		},

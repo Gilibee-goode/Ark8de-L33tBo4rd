@@ -1,65 +1,59 @@
 // Package player manages everything that belongs to an individual player:
-// their class role, computed combat stats, skill allocations, gear selections,
-// and Kredit balance.
-//
-// This package owns no HTTP-specific types — it works entirely in domain terms
-// (players, skills, gear) and lets handler.go translate to/from HTTP.
+// their archetype (class), level, computed combat stats, skill allocations,
+// gear selections, and Kredit balance.
 //
 // Layer files in this package:
 //   - model.go      — structs, constants, request/response types
 //   - repository.go — SQL queries
-//   - service.go    — business logic (stat computation, budget enforcement)
+//   - service.go    — business logic (tier/branch rules, gear restrictions)
 //   - handler.go    — HTTP request parsing and response writing
 package player
 
 import "time"
 
 // ---------------------------------------------------------------------------
-// Base stats per class role
+// Game constants
 // ---------------------------------------------------------------------------
 
-// classBaseHP maps each class role to its base health points.
-// These are the starting HP before any skill bonuses are applied.
-// The map key must exactly match the class_role values stored in the DB.
-var classBaseHP = map[string]int{
-	"tank":    150,
-	"dps":     80,
-	"healer":  100,
-	"support": 90,
-}
+// BaseHP is the uniform starting HP (נק"פ) for every archetype.
+// Archetype passives (merkava: +1) and skills (Fridge: +1) add on top.
+const BaseHP = 3
 
-// classBaseArmor maps each class role to its base armor points.
-var classBaseArmor = map[string]int{
-	"tank":    30,
-	"dps":     10,
-	"healer":  15,
-	"support": 20,
-}
+// MaxLevel caps player levels — skill tiers 1–3 are implemented so far.
+const MaxLevel = 3
 
 // ---------------------------------------------------------------------------
 // Domain types
 // ---------------------------------------------------------------------------
 
-// Skill represents one skill that players can allocate.
-// Skills are seeded at startup and are read-only during normal gameplay.
-type Skill struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	Description     string `json:"description"`
-	ClassRole       string `json:"class_role"`       // which class can use this skill
-	CostSkillPoints int    `json:"cost_skill_points"` // how many skill points it costs
-	EffectDesc      string `json:"effect_description"`
-	EffectType      string `json:"effect_type"` // "passive" or "active"
-	HPBonus         int    `json:"hp_bonus"`
-	ArmorBonus      int    `json:"armor_bonus"`
+// Archetype is one of the six playable classes, with its passive traits.
+type Archetype struct {
+	ClassRole          string `json:"class_role"`
+	DisplayName        string `json:"display_name"`
+	PassiveDescription string `json:"passive_description"`
+	HPBonus            int    `json:"hp_bonus"` // permanent HP from the passive
 }
 
-// GearType represents one type of equipment (sword, shield, etc.).
-// These are seeded at startup via migration 000007 and are read-only.
-type GearType struct {
+// Skill is one node in an archetype's skill tree.
+// Each archetype has two branches (blue/red) with one skill per tier (1–3).
+type Skill struct {
 	ID            string `json:"id"`
+	ClassRole     string `json:"class_role"`
+	Branch        string `json:"branch"` // "blue" or "red"
+	Tier          int    `json:"tier"`   // 1–3; requires player level >= tier
 	Name          string `json:"name"`
-	GearPointCost int    `json:"gear_point_cost"`
+	Description   string `json:"description"`
+	HPBonus       int    `json:"hp_bonus"`        // permanent HP granted by holding this skill
+	TeamGearBonus int    `json:"team_gear_bonus"` // extra shared gear points for the holder's team
+}
+
+// GearType represents one weapon in the catalog.
+// RestrictedTo lists the classes allowed to equip it; nil = everyone.
+type GearType struct {
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	GearPointCost int      `json:"gear_point_cost"`
+	RestrictedTo  []string `json:"restricted_to,omitempty"`
 }
 
 // KreditTransaction represents one entry in the Kredit audit log.
@@ -85,34 +79,32 @@ type PublicPlayerResponse struct {
 	Role            string  `json:"role"`
 	ProfilePhotoURL *string `json:"profile_photo_url"`
 	ClassRole       *string `json:"class_role"`
+	Level           int     `json:"level"`
 }
 
 // StatsResponse contains a player's computed combat stats.
 // All values are derived at read time — nothing here is stored in the DB.
 type StatsResponse struct {
-	ClassRole             *string `json:"class_role"`              // nil if class not yet chosen
-	HealthPoints          int     `json:"health_points"`           // base + skill bonuses
-	ArmorPoints           int     `json:"armor_points"`            // base + skill bonuses
-	SkillPointsTotal      int     `json:"skill_points_total"`
-	SkillPointsRemaining  int     `json:"skill_points_remaining"`  // total - spent
-	GearPointsUsed        int     `json:"gear_points_used"`        // sum of my gear costs
+	ClassRole      *string `json:"class_role"` // nil if class not yet chosen
+	Level          int     `json:"level"`
+	HealthPoints   int     `json:"health_points"` // BaseHP + passive + skill bonuses
+	GearPointsUsed int     `json:"gear_points_used"`
 }
 
 // SkillsResponse is the payload for GET /players/me/skills.
 type SkillsResponse struct {
-	AllocatedSkills      []Skill `json:"allocated_skills"`
-	SkillPointsTotal     int     `json:"skill_points_total"`
-	SkillPointsRemaining int     `json:"skill_points_remaining"`
+	AllocatedSkills []Skill `json:"allocated_skills"`
+	Level           int     `json:"level"` // highest tier the player may hold
 }
 
 // GearResponse is the payload for GET /players/me/gear.
 // It includes both the player's selections and the team's pool summary.
 type GearResponse struct {
-	SelectedGear          []GearType `json:"selected_gear"`
-	GearPointsUsedByMe    int        `json:"gear_points_used_by_me"`
-	TeamGearPointsTotal   int        `json:"team_gear_points_total"`   // 0 if not on a team
-	TeamGearPointsUsed    int        `json:"team_gear_points_used"`    // 0 if not on a team
-	TeamGearPoolNegative  bool       `json:"team_gear_pool_negative"`  // true = team is over budget
+	SelectedGear         []GearType `json:"selected_gear"`
+	GearPointsUsedByMe   int        `json:"gear_points_used_by_me"`
+	TeamGearPointsTotal  int        `json:"team_gear_points_total"` // 0 if not on a team
+	TeamGearPointsUsed   int        `json:"team_gear_points_used"`  // 0 if not on a team
+	TeamGearPoolNegative bool       `json:"team_gear_pool_negative"`
 }
 
 // KreditsResponse is the payload for GET /players/me/kredits.
@@ -127,7 +119,7 @@ type KreditsResponse struct {
 
 // SetClassRequest is the body for PUT /players/me/class.
 type SetClassRequest struct {
-	ClassRole string `json:"class_role"` // "tank", "dps", "healer", "support"
+	ClassRole string `json:"class_role"` // smartass, ninja, psycho, hacker, merkava, kommando
 }
 
 // SetSkillsRequest is the body for PUT /players/me/skills.
@@ -140,6 +132,11 @@ type SetSkillsRequest struct {
 // The list replaces the player's entire gear selection in one operation.
 type SetGearRequest struct {
 	GearTypeIDs []string `json:"gear_type_ids"`
+}
+
+// SetLevelRequest is the body for PUT /players/:id/level (moderator only).
+type SetLevelRequest struct {
+	Level int `json:"level"`
 }
 
 // GrantKreditsRequest is the body for POST /players/:id/kredits (moderator only).

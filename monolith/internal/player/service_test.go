@@ -33,7 +33,8 @@ import (
 type mockRepository struct {
 	getPublicProfileFn      func(ctx context.Context, playerID string) (*PublicPlayerResponse, error)
 	updateClassRoleFn       func(ctx context.Context, playerID, classRole string) error
-	getPlayerCoreFn         func(ctx context.Context, playerID string) (classRole *string, skillPointsTotal int, err error)
+	getPlayerCoreFn         func(ctx context.Context, playerID string) (classRole *string, level int, passiveHPBonus int, err error)
+	setPlayerLevelFn        func(ctx context.Context, playerID string, level int) error
 	getPlayerSkillsFn       func(ctx context.Context, playerID string) ([]Skill, error)
 	getPlayerGearFn         func(ctx context.Context, playerID string) ([]GearType, error)
 	getTeamGearPointsUsedFn func(ctx context.Context, playerID string) (teamTotal, teamUsed int, err error)
@@ -55,8 +56,11 @@ func (m *mockRepository) GetPublicProfile(ctx context.Context, playerID string) 
 func (m *mockRepository) UpdateClassRole(ctx context.Context, playerID, classRole string) error {
 	return m.updateClassRoleFn(ctx, playerID, classRole)
 }
-func (m *mockRepository) GetPlayerCore(ctx context.Context, playerID string) (*string, int, error) {
+func (m *mockRepository) GetPlayerCore(ctx context.Context, playerID string) (*string, int, int, error) {
 	return m.getPlayerCoreFn(ctx, playerID)
+}
+func (m *mockRepository) SetPlayerLevel(ctx context.Context, playerID string, level int) error {
+	return m.setPlayerLevelFn(ctx, playerID, level)
 }
 func (m *mockRepository) GetPlayerSkills(ctx context.Context, playerID string) ([]Skill, error) {
 	return m.getPlayerSkillsFn(ctx, playerID)
@@ -103,26 +107,27 @@ func (m *mockRepository) GetSkillsByClass(ctx context.Context, classRole string)
 // ---------------------------------------------------------------------------
 
 // strPtr is a tiny helper that returns a pointer to a string.
-// Go doesn't allow taking the address of a string literal (&"tank" is illegal),
+// Go doesn't allow taking the address of a string literal (&"merkava" is illegal),
 // so we use this helper to create *string values for test data.
 func strPtr(s string) *string {
 	return &s
 }
 
-// makeTestSkills returns a set of skills useful across multiple tests.
-// These match the structure of real skills but with simple, predictable values.
+// makeTestSkills returns two merkava skills (blue branch, tiers 1–2).
+// Fridge is the only skill in the game with a permanent HP bonus.
 func makeTestSkills() []Skill {
 	return []Skill{
-		{ID: "sk-1", Name: "Shield Wall", ClassRole: "tank", CostSkillPoints: 5, HPBonus: 20, ArmorBonus: 10},
-		{ID: "sk-2", Name: "Taunt", ClassRole: "tank", CostSkillPoints: 3, HPBonus: 10, ArmorBonus: 5},
+		{ID: "sk-1", ClassRole: "merkava", Branch: "blue", Tier: 1, Name: "Fridge", HPBonus: 1},
+		{ID: "sk-2", ClassRole: "merkava", Branch: "blue", Tier: 2, Name: "Windbreaker"},
 	}
 }
 
-// makeTestGear returns a set of gear types for testing.
+// makeTestGear returns one unrestricted weapon and one class-restricted one.
 func makeTestGear() []GearType {
 	return []GearType{
-		{ID: "g-1", Name: "Sword", GearPointCost: 2},
-		{ID: "g-2", Name: "Shield", GearPointCost: 5},
+		{ID: "g-1", Name: "dagger", GearPointCost: 1},
+		{ID: "g-2", Name: "shield", GearPointCost: 4,
+			RestrictedTo: []string{"psycho", "hacker", "merkava", "kommando"}},
 	}
 }
 
@@ -133,15 +138,15 @@ func makeTestGear() []GearType {
 func TestSetClass_ValidRole(t *testing.T) {
 	mock := &mockRepository{
 		updateClassRoleFn: func(ctx context.Context, playerID, classRole string) error {
-			if classRole != "tank" {
-				t.Errorf("expected class 'tank', got %q", classRole)
+			if classRole != "merkava" {
+				t.Errorf("expected class 'merkava', got %q", classRole)
 			}
 			return nil
 		},
 	}
 
 	svc := NewPlayerService(mock)
-	err := svc.SetClass(context.Background(), "player-1", "tank")
+	err := svc.SetClass(context.Background(), "player-1", "merkava")
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -164,9 +169,9 @@ func TestSetClass_InvalidRole(t *testing.T) {
 func TestGetStats_NoClassSet(t *testing.T) {
 	// When a player hasn't chosen a class yet, GetStats returns zeroed combat stats.
 	mock := &mockRepository{
-		getPlayerCoreFn: func(ctx context.Context, playerID string) (*string, int, error) {
+		getPlayerCoreFn: func(ctx context.Context, playerID string) (*string, int, int, error) {
 			// nil classRole = player hasn't chosen a class yet.
-			return nil, 20, nil
+			return nil, 1, 0, nil
 		},
 	}
 
@@ -181,26 +186,23 @@ func TestGetStats_NoClassSet(t *testing.T) {
 	if stats.HealthPoints != 0 {
 		t.Fatalf("expected 0 HP, got %d", stats.HealthPoints)
 	}
-	if stats.ArmorPoints != 0 {
-		t.Fatalf("expected 0 Armor, got %d", stats.ArmorPoints)
-	}
-	if stats.SkillPointsTotal != 20 {
-		t.Fatalf("expected 20 skill points total, got %d", stats.SkillPointsTotal)
+	if stats.Level != 1 {
+		t.Fatalf("expected level 1, got %d", stats.Level)
 	}
 }
 
 func TestGetStats_WithSkillsAndGear(t *testing.T) {
-	// When a player has a class, skills, and gear, GetStats computes accumulated values.
-	tankClass := "tank"
+	// HP = BaseHP (3) + archetype passive (merkava: +1) + skill bonuses (Fridge: +1).
+	merkava := "merkava"
 	mock := &mockRepository{
-		getPlayerCoreFn: func(ctx context.Context, playerID string) (*string, int, error) {
-			return &tankClass, 20, nil
+		getPlayerCoreFn: func(ctx context.Context, playerID string) (*string, int, int, error) {
+			return &merkava, 2, 1, nil // level 2, passive +1 HP
 		},
 		getPlayerSkillsFn: func(ctx context.Context, playerID string) ([]Skill, error) {
-			return makeTestSkills(), nil // sk-1: HP+20/Armor+10/Cost5, sk-2: HP+10/Armor+5/Cost3
+			return makeTestSkills(), nil // Fridge (+1 HP), Windbreaker (+0)
 		},
 		getPlayerGearFn: func(ctx context.Context, playerID string) ([]GearType, error) {
-			return makeTestGear(), nil // Sword: 2pts, Shield: 5pts
+			return makeTestGear(), nil // dagger: 1pt, shield: 4pts
 		},
 	}
 
@@ -210,24 +212,17 @@ func TestGetStats_WithSkillsAndGear(t *testing.T) {
 		t.Fatalf("expected no error, got: %v", err)
 	}
 
-	// Tank base: HP=150, Armor=30. Skills add: HP+30, Armor+15. Total: HP=180, Armor=45.
-	expectedHP := 150 + 20 + 10
-	expectedArmor := 30 + 10 + 5
+	expectedHP := BaseHP + 1 + 1 // base 3 + merkava passive + Fridge
 	if stats.HealthPoints != expectedHP {
 		t.Fatalf("expected HP=%d, got %d", expectedHP, stats.HealthPoints)
 	}
-	if stats.ArmorPoints != expectedArmor {
-		t.Fatalf("expected Armor=%d, got %d", expectedArmor, stats.ArmorPoints)
+	if stats.Level != 2 {
+		t.Fatalf("expected level 2, got %d", stats.Level)
 	}
 
-	// Skill points: total 20, spent 5+3=8, remaining 12.
-	if stats.SkillPointsRemaining != 12 {
-		t.Fatalf("expected 12 skill points remaining, got %d", stats.SkillPointsRemaining)
-	}
-
-	// Gear points: 2+5=7.
-	if stats.GearPointsUsed != 7 {
-		t.Fatalf("expected 7 gear points used, got %d", stats.GearPointsUsed)
+	// Gear points: 1+4=5.
+	if stats.GearPointsUsed != 5 {
+		t.Fatalf("expected 5 gear points used, got %d", stats.GearPointsUsed)
 	}
 }
 
@@ -236,15 +231,15 @@ func TestGetStats_WithSkillsAndGear(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSetSkills_Success(t *testing.T) {
-	tankClass := "tank"
+	merkava := "merkava"
 	var savedIDs []string
 
 	mock := &mockRepository{
-		getPlayerCoreFn: func(ctx context.Context, playerID string) (*string, int, error) {
-			return &tankClass, 20, nil
+		getPlayerCoreFn: func(ctx context.Context, playerID string) (*string, int, int, error) {
+			return &merkava, 2, 1, nil // level 2 — may hold tiers 1 and 2
 		},
 		getSkillsByIDsFn: func(ctx context.Context, ids []string) ([]Skill, error) {
-			return makeTestSkills(), nil // 2 tank skills, total cost 8
+			return makeTestSkills(), nil // tier 1 + tier 2, both merkava
 		},
 		setPlayerSkillsFn: func(ctx context.Context, playerID string, skillIDs []string) error {
 			savedIDs = skillIDs
@@ -266,9 +261,9 @@ func TestSetSkills_Success(t *testing.T) {
 
 func TestSetSkills_NoClassSet(t *testing.T) {
 	mock := &mockRepository{
-		getPlayerCoreFn: func(ctx context.Context, playerID string) (*string, int, error) {
+		getPlayerCoreFn: func(ctx context.Context, playerID string) (*string, int, int, error) {
 			// nil classRole — player hasn't chosen a class.
-			return nil, 20, nil
+			return nil, 1, 0, nil
 		},
 	}
 
@@ -282,10 +277,10 @@ func TestSetSkills_NoClassSet(t *testing.T) {
 }
 
 func TestSetSkills_SkillNotFound(t *testing.T) {
-	tankClass := "tank"
+	merkava := "merkava"
 	mock := &mockRepository{
-		getPlayerCoreFn: func(ctx context.Context, playerID string) (*string, int, error) {
-			return &tankClass, 20, nil
+		getPlayerCoreFn: func(ctx context.Context, playerID string) (*string, int, int, error) {
+			return &merkava, 3, 1, nil
 		},
 		getSkillsByIDsFn: func(ctx context.Context, ids []string) ([]Skill, error) {
 			// Return fewer skills than requested — simulates "skill not found".
@@ -303,14 +298,14 @@ func TestSetSkills_SkillNotFound(t *testing.T) {
 }
 
 func TestSetSkills_WrongClass(t *testing.T) {
-	dpsClass := "dps"
+	ninja := "ninja"
 	mock := &mockRepository{
-		getPlayerCoreFn: func(ctx context.Context, playerID string) (*string, int, error) {
-			return &dpsClass, 20, nil
+		getPlayerCoreFn: func(ctx context.Context, playerID string) (*string, int, int, error) {
+			return &ninja, 3, 0, nil
 		},
 		getSkillsByIDsFn: func(ctx context.Context, ids []string) ([]Skill, error) {
-			// Return a tank skill for a DPS player — class mismatch.
-			return makeTestSkills()[:1], nil // sk-1 is a tank skill
+			// Return a merkava skill for a ninja player — class mismatch.
+			return makeTestSkills()[:1], nil
 		},
 	}
 
@@ -323,35 +318,57 @@ func TestSetSkills_WrongClass(t *testing.T) {
 	}
 }
 
-func TestSetSkills_BudgetExceeded(t *testing.T) {
-	tankClass := "tank"
+func TestSetSkills_TierAboveLevel(t *testing.T) {
+	merkava := "merkava"
 	mock := &mockRepository{
-		getPlayerCoreFn: func(ctx context.Context, playerID string) (*string, int, error) {
-			// Only 5 skill points available.
-			return &tankClass, 5, nil
+		getPlayerCoreFn: func(ctx context.Context, playerID string) (*string, int, int, error) {
+			return &merkava, 1, 1, nil // level 1 — tier 2 is out of reach
 		},
 		getSkillsByIDsFn: func(ctx context.Context, ids []string) ([]Skill, error) {
-			// Total cost = 5+3 = 8, exceeding the 5 point budget.
-			return makeTestSkills(), nil
+			return makeTestSkills()[1:], nil // Windbreaker, tier 2
 		},
 	}
 
 	svc := NewPlayerService(mock)
 	err := svc.SetSkills(context.Background(), "player-1", SetSkillsRequest{
-		SkillIDs: []string{"sk-1", "sk-2"},
+		SkillIDs: []string{"sk-2"},
 	})
-	if !errors.Is(err, ErrInsufficientSkillPts) {
-		t.Fatalf("expected ErrInsufficientSkillPts, got: %v", err)
+	if !errors.Is(err, ErrTierAboveLevel) {
+		t.Fatalf("expected ErrTierAboveLevel, got: %v", err)
+	}
+}
+
+func TestSetSkills_OneSkillPerTier(t *testing.T) {
+	merkava := "merkava"
+	mock := &mockRepository{
+		getPlayerCoreFn: func(ctx context.Context, playerID string) (*string, int, int, error) {
+			return &merkava, 3, 1, nil
+		},
+		getSkillsByIDsFn: func(ctx context.Context, ids []string) ([]Skill, error) {
+			// Both branches of tier 1 — blue AND red is illegal.
+			return []Skill{
+				{ID: "sk-1", ClassRole: "merkava", Branch: "blue", Tier: 1, Name: "Fridge", HPBonus: 1},
+				{ID: "sk-3", ClassRole: "merkava", Branch: "red", Tier: 1, Name: "Nailed to the Floor"},
+			}, nil
+		},
+	}
+
+	svc := NewPlayerService(mock)
+	err := svc.SetSkills(context.Background(), "player-1", SetSkillsRequest{
+		SkillIDs: []string{"sk-1", "sk-3"},
+	})
+	if !errors.Is(err, ErrOneSkillPerTier) {
+		t.Fatalf("expected ErrOneSkillPerTier, got: %v", err)
 	}
 }
 
 func TestSetSkills_EmptyListClearsAllocation(t *testing.T) {
-	tankClass := "tank"
+	merkava := "merkava"
 	clearCalled := false
 
 	mock := &mockRepository{
-		getPlayerCoreFn: func(ctx context.Context, playerID string) (*string, int, error) {
-			return &tankClass, 20, nil
+		getPlayerCoreFn: func(ctx context.Context, playerID string) (*string, int, int, error) {
+			return &merkava, 2, 1, nil
 		},
 		setPlayerSkillsFn: func(ctx context.Context, playerID string, skillIDs []string) error {
 			clearCalled = true
@@ -375,11 +392,61 @@ func TestSetSkills_EmptyListClearsAllocation(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// SetLevel tests
+// ---------------------------------------------------------------------------
+
+func TestSetLevel_Success(t *testing.T) {
+	var savedLevel int
+	mock := &mockRepository{
+		playerExistsFn: func(ctx context.Context, playerID string) (bool, error) { return true, nil },
+		setPlayerLevelFn: func(ctx context.Context, playerID string, level int) error {
+			savedLevel = level
+			return nil
+		},
+	}
+
+	svc := NewPlayerService(mock)
+	if err := svc.SetLevel(context.Background(), "player-1", SetLevelRequest{Level: 3}); err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if savedLevel != 3 {
+		t.Fatalf("expected level 3 saved, got %d", savedLevel)
+	}
+}
+
+func TestSetLevel_InvalidLevel(t *testing.T) {
+	svc := NewPlayerService(&mockRepository{})
+
+	for _, lvl := range []int{0, 4, -1} {
+		err := svc.SetLevel(context.Background(), "player-1", SetLevelRequest{Level: lvl})
+		if !errors.Is(err, ErrInvalidLevel) {
+			t.Fatalf("level %d: expected ErrInvalidLevel, got: %v", lvl, err)
+		}
+	}
+}
+
+func TestSetLevel_PlayerNotFound(t *testing.T) {
+	mock := &mockRepository{
+		playerExistsFn: func(ctx context.Context, playerID string) (bool, error) { return false, nil },
+	}
+
+	svc := NewPlayerService(mock)
+	err := svc.SetLevel(context.Background(), "ghost", SetLevelRequest{Level: 2})
+	if !errors.Is(err, ErrPlayerNotFound) {
+		t.Fatalf("expected ErrPlayerNotFound, got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // SetGear tests
 // ---------------------------------------------------------------------------
 
 func TestSetGear_Success(t *testing.T) {
+	merkava := "merkava"
 	mock := &mockRepository{
+		getPlayerCoreFn: func(ctx context.Context, playerID string) (*string, int, int, error) {
+			return &merkava, 1, 1, nil // merkava may equip the shield
+		},
 		getGearTypesByIDsFn: func(ctx context.Context, ids []string) ([]GearType, error) {
 			return makeTestGear(), nil
 		},
@@ -411,6 +478,27 @@ func TestSetGear_GearNotFound(t *testing.T) {
 	})
 	if !errors.Is(err, ErrGearNotFound) {
 		t.Fatalf("expected ErrGearNotFound, got: %v", err)
+	}
+}
+
+func TestSetGear_ClassRestricted(t *testing.T) {
+	// A ninja may not equip a shield (restricted to psycho/hacker/merkava/kommando).
+	ninja := "ninja"
+	mock := &mockRepository{
+		getPlayerCoreFn: func(ctx context.Context, playerID string) (*string, int, int, error) {
+			return &ninja, 1, 0, nil
+		},
+		getGearTypesByIDsFn: func(ctx context.Context, ids []string) ([]GearType, error) {
+			return makeTestGear()[1:], nil // the shield
+		},
+	}
+
+	svc := NewPlayerService(mock)
+	err := svc.SetGear(context.Background(), "player-1", SetGearRequest{
+		GearTypeIDs: []string{"g-2"},
+	})
+	if !errors.Is(err, ErrGearClassRestricted) {
+		t.Fatalf("expected ErrGearClassRestricted, got: %v", err)
 	}
 }
 
@@ -574,17 +662,17 @@ func TestGrantKredits_PlayerNotFound(t *testing.T) {
 func TestGetAvailableSkills_ValidClass(t *testing.T) {
 	mock := &mockRepository{
 		getSkillsByClassFn: func(ctx context.Context, classRole string) ([]Skill, error) {
-			if classRole != "healer" {
-				t.Errorf("expected class 'healer', got %q", classRole)
+			if classRole != "psycho" {
+				t.Errorf("expected class 'psycho', got %q", classRole)
 			}
 			return []Skill{
-				{ID: "sk-h1", Name: "Heal", ClassRole: "healer", CostSkillPoints: 4},
+				{ID: "sk-p1", ClassRole: "psycho", Branch: "blue", Tier: 1, Name: "Basic Psychosis"},
 			}, nil
 		},
 	}
 
 	svc := NewPlayerService(mock)
-	skills, err := svc.GetAvailableSkills(context.Background(), "healer")
+	skills, err := svc.GetAvailableSkills(context.Background(), "psycho")
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}

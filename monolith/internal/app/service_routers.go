@@ -87,6 +87,10 @@ func BuildPlayerRouter(pool *pgxpool.Pool, jwtSecret string, pub events.Publishe
 			authmw.Authenticate(jwtSecret),
 			authmw.RequireRole("moderator", "admin"),
 		).Post("/{id}/kredits", h.GrantKredits)
+		r.With(
+			authmw.Authenticate(jwtSecret),
+			authmw.RequireRole("moderator", "admin"),
+		).Put("/{id}/level", h.SetLevel)
 	})
 	return r
 }
@@ -199,6 +203,10 @@ func BuildFrontendRouter(pool *pgxpool.Pool, jwtSecret string, templatesDir stri
 			authmw.AuthenticateWithSessions(jwtSecret, sessionService),
 			authmw.RequireRole("moderator", "admin"),
 		).Post("/mod/grant-kredits", fh.GrantKredits)
+		r.With(
+			authmw.AuthenticateWithSessions(jwtSecret, sessionService),
+			authmw.RequireRole("moderator", "admin"),
+		).Post("/mod/set-level", fh.SetLevel)
 	})
 	return r
 }

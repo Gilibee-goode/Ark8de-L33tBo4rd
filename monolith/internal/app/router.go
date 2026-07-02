@@ -165,6 +165,11 @@ func BuildRouter(pool *pgxpool.Pool, jwtSecret string, templatesDir string) chi.
 			authmw.AuthenticateWithSessions(jwtSecret, sessionService),
 			authmw.RequireRole("moderator", "admin"),
 		).Post("/mod/grant-kredits", frontendHandler.GrantKredits)
+
+		r.With(
+			authmw.AuthenticateWithSessions(jwtSecret, sessionService),
+			authmw.RequireRole("moderator", "admin"),
+		).Post("/mod/set-level", frontendHandler.SetLevel)
 	})
 
 	// ======================================================================
@@ -234,6 +239,10 @@ func BuildRouter(pool *pgxpool.Pool, jwtSecret string, templatesDir string) chi.
 			authmw.Authenticate(jwtSecret),
 			authmw.RequireRole("moderator", "admin"),
 		).Post("/{id}/kredits", playerHandler.GrantKredits)
+		r.With(
+			authmw.Authenticate(jwtSecret),
+			authmw.RequireRole("moderator", "admin"),
+		).Put("/{id}/level", playerHandler.SetLevel)
 	})
 
 	return r
