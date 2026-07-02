@@ -137,10 +137,19 @@ monolith/
 ├── cmd/
 │   ├── server/main.go        (173L)  HTTP server — env, DB connect, router, graceful shutdown
 │   ├── migrate/main.go       (142L)  CLI for golang-migrate up/down
-│   └── seed/main.go          (573L)  Seeds 2 teams, 11 players, skills, gear, kredits
+│   ├── seed/main.go          (573L)  Seeds 2 teams, 11 players, skills, gear, kredits
+│   ├── auth-service/                  Phase 3 microservice :8081 — /auth/*
+│   ├── player-service/                Phase 3 microservice :8082 — /api/players/*, /api/skills (+NATS)
+│   ├── team-service/                  Phase 3 microservice :8083 — /api/teams/* (+NATS)
+│   ├── leaderboard-service/           Phase 3 microservice :8084 — /api/leaderboard/* (NATS subscriber)
+│   ├── frontend-service/              Phase 3 microservice :8085 — HTML pages, /static, sessions
+│   └── gateway/                       Phase 3 api-gateway :8080 — reverse proxy + edge JWT validation
 │
 ├── internal/
 │   ├── app/router.go         (196L)  Builds chi router — shared by server and tests
+│   ├── app/service_routers.go        Per-service router builders (Phase 3)
+│   ├── app/run.go                    Shared service bootstrap (env, DB, NATS, graceful shutdown)
+│   ├── events/                       NATS JetStream publisher/subscriber + event payload types
 │   │
 │   ├── auth/                          Register, login, JWT
 │   │   ├── handler.go        (158L)  POST /auth/register, POST /auth/login, GET /auth/me
@@ -185,10 +194,13 @@ monolith/
 │
 ├── templates/                         Go HTML templates (dark theme)
 ├── static/                            CSS, images
-├── Dockerfile                         Multi-stage: golang:1.25-alpine → scratch (13.3 MB)
+├── Dockerfile                         Multi-stage scratch build, parameterized: --build-arg SERVICE=<cmd>
 └── go.mod
 
-db/migrations/                         12 SQL migration pairs (schema source of truth)
-infra/docker-compose.yml               Local dev: postgres + pgadmin + app
+db/migrations/                         13 SQL migration pairs (schema source of truth)
+infra/docker-compose.yml               Local dev: postgres + nats + migrate + 6 services + pgadmin
+infra/terraform/                       Phase 4: modules/cluster (KIND) + environments/dev
+infra/k8s/base/                        Phase 5: per-service Deployment/Service/ConfigMap/HPA, jobs, ingress, SealedSecret
+infra/k8s/helm-values/                 postgres (Bitnami), nats, ingress-nginx values
 docs/                                  Phase docs with Mermaid diagrams
 ```

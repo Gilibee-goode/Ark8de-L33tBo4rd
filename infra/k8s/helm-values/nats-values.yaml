@@ -1,0 +1,10 @@
+# NATS with JetStream — async events between services (dev values).
+# Install:
+#   helm install nats nats/nats -n ark8de-infra \
+#     -f infra/k8s/helm-values/nats-values.yaml
+config:
+  jetstream:
+    enabled: true
+    fileStore:
+      pvc:
+        size: 1Gi

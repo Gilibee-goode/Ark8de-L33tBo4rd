@@ -93,7 +93,13 @@ func runMigrations(dbURL, command string) error {
 	// `go run ./cmd/migrate` from the monolith/ directory is monolith/.
 	// Our migrations live at <repo-root>/db/migrations/, which is one
 	// level up from monolith/.
-	sourceURL := "file://../db/migrations"
+	// MIGRATIONS_PATH lets containers point at a baked-in copy of the SQL
+	// files (e.g. /app/migrations); the default suits `go run` from monolith/.
+	migrationsPath := os.Getenv("MIGRATIONS_PATH")
+	if migrationsPath == "" {
+		migrationsPath = "../db/migrations"
+	}
+	sourceURL := "file://" + migrationsPath
 
 	// migrate.New creates a migration runner.
 	// It reads the source directory, discovers all *.up.sql and *.down.sql

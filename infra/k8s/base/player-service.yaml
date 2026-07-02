@@ -1,0 +1,83 @@
+# player-service — ConfigMap + Deployment + Service + HPA
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: player-service
+  namespace: ark8de
+data:
+  PORT: "8082"
+  NATS_URL: "nats://nats.ark8de-infra.svc.cluster.local:4222"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: player-service
+  namespace: ark8de
+  labels: { app: player-service }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: player-service }
+  template:
+    metadata:
+      labels: { app: player-service }
+    spec:
+      containers:
+        - name: player-service
+          image: ark8de/player-service:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8082
+          envFrom:
+            - configMapRef: { name: player-service }
+          env:
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef: { name: app-secrets, key: JWT_SECRET }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: app-secrets, key: DATABASE_URL }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8082 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8082 }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: player-service
+  namespace: ark8de
+  labels: { app: player-service }
+spec:
+  type: ClusterIP
+  selector: { app: player-service }
+  ports:
+    - port: 8082
+      targetPort: 8082
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: player-service
+  namespace: ark8de
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: player-service
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

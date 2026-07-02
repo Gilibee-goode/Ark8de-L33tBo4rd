@@ -14,12 +14,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
+	"time"
 	"unicode"
 
 	// --- Third-party ---
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	// --- Internal ---
+	"github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/events"
 )
 
 var (
@@ -71,14 +76,30 @@ type Repository interface {
 
 // TeamService contains all business logic for team operations.
 type TeamService struct {
-	repo Repository
+	repo   Repository
+	events events.Publisher // async event publisher — NoopPublisher unless wired via WithEvents
 }
 
 // NewTeamService constructs a TeamService.
 // The repo parameter accepts the Repository interface — in production a
 // *TeamRepository is passed in; in unit tests a mock is used instead.
 func NewTeamService(repo Repository) *TeamService {
-	return &TeamService{repo: repo}
+	return &TeamService{repo: repo, events: events.NoopPublisher{}}
+}
+
+// WithEvents attaches a NATS event publisher (used by team-service in
+// microservice mode). Returns the service for chaining.
+func (s *TeamService) WithEvents(pub events.Publisher) *TeamService {
+	s.events = pub
+	return s
+}
+
+// publish emits an event, logging (not failing) on error — events are
+// best-effort notifications, never part of the transaction.
+func (s *TeamService) publish(ctx context.Context, subject string, payload any) {
+	if err := s.events.Publish(ctx, subject, payload); err != nil {
+		slog.Error("TeamService: event publish failed", "subject", subject, "error", err)
+	}
 }
 
 // ListTeams returns all teams sorted by Arkade points.
@@ -251,7 +272,13 @@ func (s *TeamService) RemoveMember(ctx context.Context, requesterID, requesterRo
 		return ErrCannotRemoveOwner
 	}
 
-	return s.repo.RemoveMember(ctx, teamID, playerID)
+	if err := s.repo.RemoveMember(ctx, teamID, playerID); err != nil {
+		return err
+	}
+	s.publish(ctx, events.SubjectTeamMembershipChanged, events.TeamMembershipChanged{
+		TeamID: teamID, PlayerID: playerID, Action: "removed", At: time.Now().UTC(),
+	})
+	return nil
 }
 
 // SendJoinRequest creates a pending join request from a player to a team.
@@ -352,7 +379,13 @@ func (s *TeamService) ResolveJoinRequest(ctx context.Context, requesterID, reque
 			// Auto-reject instead of failing loudly.
 			return s.repo.RejectJoinRequest(ctx, requestID)
 		}
-		return s.repo.AcceptJoinRequest(ctx, requestID, teamID, req.PlayerID)
+		if err := s.repo.AcceptJoinRequest(ctx, requestID, teamID, req.PlayerID); err != nil {
+			return err
+		}
+		s.publish(ctx, events.SubjectTeamMembershipChanged, events.TeamMembershipChanged{
+			TeamID: teamID, PlayerID: req.PlayerID, Action: "joined", At: time.Now().UTC(),
+		})
+		return nil
 	}
 
 	return s.repo.RejectJoinRequest(ctx, requestID)
@@ -372,7 +405,13 @@ func (s *TeamService) AddArkadePoints(ctx context.Context, requesterID, teamID s
 		return fmt.Errorf("TeamService.AddArkadePoints: %w", err)
 	}
 
-	return s.repo.AddArkadePoints(ctx, teamID, requesterID, req.Delta, req.Reason)
+	if err := s.repo.AddArkadePoints(ctx, teamID, requesterID, req.Delta, req.Reason); err != nil {
+		return err
+	}
+	s.publish(ctx, events.SubjectTeamPointsUpdated, events.TeamPointsUpdated{
+		TeamID: teamID, Delta: req.Delta, Reason: req.Reason, ChangedBy: requesterID, At: time.Now().UTC(),
+	})
+	return nil
 }
 
 // GetArkadePointHistory returns the point audit log for a team. Moderator/admin only.

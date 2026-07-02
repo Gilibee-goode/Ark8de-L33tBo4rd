@@ -1,0 +1,7 @@
+# Terraform state and workspace files — never commit state.
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+*.tfvars
+crash.log

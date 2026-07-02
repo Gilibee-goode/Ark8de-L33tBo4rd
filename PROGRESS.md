@@ -49,32 +49,37 @@
 - [x] Integration tests for login/register/logout/CSRF/navbar (15 new tests in `tests/session_test.go`)
 - [x] Backward compatibility — all 55 existing integration tests pass (Bearer JWT still works)
 
-## Phase 3: Service Extraction
-- [ ] Extract leaderboard-service
-- [ ] Extract auth-service
-- [ ] Extract player-service + NATS JetStream events
-- [ ] Extract team-service
-- [ ] Add api-gateway
-- [ ] Update docker-compose with all services + NATS
-- [ ] `docs/phase-3-complete.md` with diagrams
+## Phase 3: Service Extraction ✅
+- [x] Extract leaderboard-service (subscribes to `team.>` events, durable NATS consumer)
+- [x] Extract auth-service
+- [x] Extract player-service + NATS JetStream events (`player.gear_updated`)
+- [x] Extract team-service (publishes `team.points_updated`, `team.membership_changed`)
+- [x] Add api-gateway (reverse proxy by prefix + JWT signature validation at the edge)
+- [x] Add frontend-service (server-rendered HTML split out of the monolith)
+- [x] Update docker-compose with all services + NATS (+ one-shot migrate job)
+- [x] `docs/phase-3-complete.md` with diagrams
+- Note: extraction uses the multi-binary monorepo pattern — one Go module, six
+  `cmd/` binaries, one parameterized Dockerfile (`--build-arg SERVICE=...`).
+  E2E verified: points award through gateway → NATS event → leaderboard-service.
 
-## Phase 4: Terraform + KIND
-- [ ] Install KIND + Terraform locally
-- [ ] `modules/cluster` with KIND provider
-- [ ] `environments/dev` wired to KIND module
-- [ ] Terraform Cloud remote state configured
-- [ ] `terraform apply` provisions cluster
-- [ ] `infra.yml` GitHub Actions workflow
-- [ ] `docs/phase-4-complete.md` with diagrams
+## Phase 4: Terraform + KIND ✅ (minus GitHub Actions)
+- [x] Install KIND + Terraform locally
+- [x] `modules/cluster` with KIND provider (tehcyx/kind, ingress ports 8880/8443 mapped)
+- [x] `environments/dev` wired to KIND module (1 control-plane + 2 workers, k8s v1.31)
+- [ ] Terraform Cloud remote state configured — `cloud {}` block written but commented;
+      needs a TFC account + `terraform login` (state is local until then)
+- [x] `terraform apply` provisions cluster (`kubectl get nodes` → 3 Ready)
+- [ ] `infra.yml` GitHub Actions workflow (deferred — GHA excluded from this pass)
+- [x] `docs/phase-4-complete.md` with diagrams
 
-## Phase 5: Kubernetes
-- [ ] Deployment + Service + ConfigMap + HPA per service
-- [ ] PostgreSQL via Bitnami Helm chart
-- [ ] NATS via Helm chart
-- [ ] ingress-nginx configured
-- [ ] Sealed Secrets for sensitive config
-- [ ] All pods Running in `ark8de` namespace
-- [ ] `docs/phase-5-complete.md` with diagrams
+## Phase 5: Kubernetes ✅
+- [x] Deployment + Service + ConfigMap + HPA per service (probes on /healthz, metrics-server feeds HPAs)
+- [x] PostgreSQL via Bitnami Helm chart (`ark8de-infra` namespace)
+- [x] NATS via Helm chart (JetStream + file store PVC)
+- [x] ingress-nginx configured (KIND hostPort mode → app at http://localhost:8880)
+- [x] Sealed Secrets for sensitive config (controller + `app-secrets-sealed.yaml`; plain secret never committed)
+- [x] All pods Running in `ark8de` namespace (+ db-migrate / db-seed Jobs Completed)
+- [x] `docs/phase-5-complete.md` with diagrams
 
 ## Phase 6: GitOps with ArgoCD
 - [ ] ArgoCD installed in `argocd` namespace

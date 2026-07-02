@@ -15,10 +15,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"time"
 
 	// --- Third-party ---
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	// --- Internal ---
+	"github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/events"
 )
 
 // Sentinel errors — named error values callers can check with errors.Is().
@@ -69,14 +74,22 @@ type Repository interface {
 
 // PlayerService contains all business logic for player operations.
 type PlayerService struct {
-	repo Repository
+	repo   Repository
+	events events.Publisher // async event publisher — NoopPublisher unless wired via WithEvents
 }
 
 // NewPlayerService constructs a PlayerService.
 // The repo parameter accepts the Repository interface — in production a
 // *PlayerRepository is passed in; in unit tests a mock is used instead.
 func NewPlayerService(repo Repository) *PlayerService {
-	return &PlayerService{repo: repo}
+	return &PlayerService{repo: repo, events: events.NoopPublisher{}}
+}
+
+// WithEvents attaches a NATS event publisher (used by player-service in
+// microservice mode). Returns the service for chaining.
+func (s *PlayerService) WithEvents(pub events.Publisher) *PlayerService {
+	s.events = pub
+	return s
 }
 
 // GetPublicProfile returns the publicly visible profile for any player.
@@ -260,7 +273,16 @@ func (s *PlayerService) SetGear(ctx context.Context, playerID string, req SetGea
 			return ErrGearNotFound
 		}
 	}
-	return s.repo.SetPlayerGear(ctx, playerID, req.GearTypeIDs)
+	if err := s.repo.SetPlayerGear(ctx, playerID, req.GearTypeIDs); err != nil {
+		return err
+	}
+	// Notify subscribers (team-service recomputes gear pool usage) — best-effort.
+	if err := s.events.Publish(ctx, events.SubjectPlayerGearUpdated, events.PlayerGearUpdated{
+		PlayerID: playerID, At: time.Now().UTC(),
+	}); err != nil {
+		slog.Error("PlayerService: event publish failed", "subject", events.SubjectPlayerGearUpdated, "error", err)
+	}
+	return nil
 }
 
 // GetKredits returns the player's Kredit balance and transaction history.

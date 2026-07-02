@@ -1,0 +1,84 @@
+# gateway — ConfigMap + Deployment + Service + HPA
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway
+  namespace: ark8de
+data:
+  PORT: "8080"
+  AUTH_SERVICE_URL: "http://auth-service:8081"
+  PLAYER_SERVICE_URL: "http://player-service:8082"
+  TEAM_SERVICE_URL: "http://team-service:8083"
+  LEADERBOARD_SERVICE_URL: "http://leaderboard-service:8084"
+  FRONTEND_SERVICE_URL: "http://frontend-service:8085"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: ark8de
+  labels: { app: gateway }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: gateway }
+  template:
+    metadata:
+      labels: { app: gateway }
+    spec:
+      containers:
+        - name: gateway
+          image: ark8de/gateway:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef: { name: gateway }
+          env:
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef: { name: app-secrets, key: JWT_SECRET }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: ark8de
+  labels: { app: gateway }
+spec:
+  type: ClusterIP
+  selector: { app: gateway }
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gateway
+  namespace: ark8de
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gateway
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

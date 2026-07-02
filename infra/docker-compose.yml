@@ -1,140 +1,196 @@
 # -----------------------------------------------------------------
-# docker-compose.yml — Local development environment
+# docker-compose.yml — Local development environment (Phase 3)
 # -----------------------------------------------------------------
-# This file defines the services that make up the Ark8de dev stack.
-# Start everything with: docker compose -f infra/docker-compose.yml up --build
-# Stop everything with:  docker compose -f infra/docker-compose.yml down
+# The monolith is split into microservices. Start everything with:
+#   docker compose -f infra/docker-compose.yml up --build
 #
-# SERVICES:
-#   postgres  — PostgreSQL database (the source of truth)
-#   pgadmin   — Web UI for browsing the database (optional, dev only)
-#   app       — The Ark8de Go HTTP server
+# Topology:
+#   postgres     — shared PostgreSQL database
+#   nats         — NATS JetStream (async events between services)
+#   migrate      — one-shot: applies db/migrations then exits
+#   auth-service        :8081 (internal)  /auth/*
+#   player-service      :8082 (internal)  /api/players/*, /api/skills
+#   team-service        :8083 (internal)  /api/teams/*
+#   leaderboard-service :8084 (internal)  /api/leaderboard/*
+#   frontend-service    :8085 (internal)  HTML pages, /static
+#   gateway             :8080 (published) single entry point → routes to all
+#   pgadmin      :5050 — DB browser (dev only)
 # -----------------------------------------------------------------
+
+# Shared env for every Go service — YAML anchor to avoid repetition.
+x-service-env: &service-env
+  DATABASE_URL: postgres://ark8de:ark8de_dev@postgres:5432/ark8de?sslmode=disable
+  JWT_SECRET: local-dev-secret-change-me-in-production
+  NATS_URL: nats://nats:4222
 
 services:
 
-  # ---------------------------------------------------------------
-  # postgres — PostgreSQL 16 database
-  # ---------------------------------------------------------------
   postgres:
     image: postgres:16-alpine
-    # Alpine variant keeps the image small (~80MB vs ~370MB for the default).
     container_name: ark8de-postgres
-
     environment:
-      # These env vars are read by the official postgres image on first boot
-      # to create the initial database, user, and password.
       POSTGRES_DB: ark8de
       POSTGRES_USER: ark8de
       POSTGRES_PASSWORD: ark8de_dev
-
     ports:
-      # Map host port 5432 to container port 5432, so you can connect
-      # from your laptop using any PostgreSQL client (psql, TablePlus, etc.)
-      # Format: "HOST_PORT:CONTAINER_PORT"
       - "5432:5432"
-
     volumes:
-      # Named volume: Docker manages the data directory on the host.
-      # This persists data between `docker compose down` / `up` cycles.
-      # Without this, all data is lost every time the container is removed.
       - postgres_data:/var/lib/postgresql/data
-
     healthcheck:
-      # pg_isready checks whether PostgreSQL is accepting connections.
-      # The `depends_on: condition: service_healthy` blocks below wait for
-      # this check to pass before starting the dependent services.
       test: ["CMD-SHELL", "pg_isready -U ark8de -d ark8de"]
-      interval: 5s      # check every 5 seconds
-      timeout: 5s       # fail if no response within 5 seconds
-      retries: 10       # mark as unhealthy only after 10 consecutive failures
-      start_period: 10s # give PostgreSQL 10 seconds to start before counting failures
-
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     restart: unless-stopped
-    # Restart the container automatically unless you explicitly stop it.
 
-  # ---------------------------------------------------------------
-  # pgadmin — Web-based PostgreSQL database browser (dev tool)
-  # ---------------------------------------------------------------
+  # NATS with JetStream enabled (-js) and the HTTP monitoring port (-m 8222)
+  # which doubles as the healthcheck endpoint.
+  nats:
+    image: nats:2-alpine
+    container_name: ark8de-nats
+    command: ["-js", "-m", "8222"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8222/healthz || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # One-shot migration job: runs `migrate up` and exits 0.
+  # Services below wait for it via service_completed_successfully.
+  migrate:
+    build:
+      context: ..
+      dockerfile: monolith/Dockerfile
+      args: { SERVICE: migrate }
+    container_name: ark8de-migrate
+    command: ["/app/service", "up"]
+    environment:
+      DATABASE_URL: postgres://ark8de:ark8de_dev@postgres:5432/ark8de?sslmode=disable
+      MIGRATIONS_PATH: /app/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  auth-service:
+    build:
+      context: ..
+      dockerfile: monolith/Dockerfile
+      args: { SERVICE: auth-service }
+    container_name: ark8de-auth
+    environment:
+      <<: *service-env
+      PORT: "8081"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  player-service:
+    build:
+      context: ..
+      dockerfile: monolith/Dockerfile
+      args: { SERVICE: player-service }
+    container_name: ark8de-player
+    environment:
+      <<: *service-env
+      PORT: "8082"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
+
+  team-service:
+    build:
+      context: ..
+      dockerfile: monolith/Dockerfile
+      args: { SERVICE: team-service }
+    container_name: ark8de-team
+    environment:
+      <<: *service-env
+      PORT: "8083"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
+
+  leaderboard-service:
+    build:
+      context: ..
+      dockerfile: monolith/Dockerfile
+      args: { SERVICE: leaderboard-service }
+    container_name: ark8de-leaderboard
+    environment:
+      <<: *service-env
+      PORT: "8084"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend-service:
+    build:
+      context: ..
+      dockerfile: monolith/Dockerfile
+      args: { SERVICE: frontend-service }
+    container_name: ark8de-frontend
+    environment:
+      <<: *service-env
+      PORT: "8085"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: monolith/Dockerfile
+      args: { SERVICE: gateway }
+    container_name: ark8de-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      JWT_SECRET: local-dev-secret-change-me-in-production
+      AUTH_SERVICE_URL: http://auth-service:8081
+      PLAYER_SERVICE_URL: http://player-service:8082
+      TEAM_SERVICE_URL: http://team-service:8083
+      LEADERBOARD_SERVICE_URL: http://leaderboard-service:8084
+      FRONTEND_SERVICE_URL: http://frontend-service:8085
+    depends_on:
+      - auth-service
+      - player-service
+      - team-service
+      - leaderboard-service
+      - frontend-service
+    restart: unless-stopped
+
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: ark8de-pgadmin
-
     environment:
-      # Default admin credentials for the pgAdmin web UI.
-      # These are dev-only credentials — pgAdmin itself is not exposed in production.
       PGADMIN_DEFAULT_EMAIL: admin@ark8de.dev
       PGADMIN_DEFAULT_PASSWORD: admin
-      # PGADMIN_REPLACE_SERVERS_ON_STARTUP forces pgAdmin to re-read servers.json
-      # on every container start, not just the first time. Without this, the server
-      # registration from servers.json is only loaded once when the volume is created.
       PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
-
     ports:
-      # pgAdmin's web UI runs on port 80 inside the container.
-      # We map it to 5050 on the host to avoid conflicts.
-      # Open http://localhost:5050 in your browser to access it.
       - "5050:80"
-
     volumes:
-      # Named volume: persists pgAdmin's preferences and query history.
       - pgadmin_data:/var/lib/pgadmin
-      # servers.json is read by pgAdmin on every startup to pre-register servers.
-      # This means the postgres server appears automatically — no manual setup needed,
-      # even after a full `docker compose down -v`.
-      # :ro mounts the file as read-only — pgAdmin reads it but should never modify it.
       - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
-
     depends_on:
       postgres:
         condition: service_healthy
-        # Wait until postgres passes its healthcheck before starting pgadmin.
-        # This prevents pgadmin from starting before the DB is ready to accept connections.
-
     restart: unless-stopped
 
-  # ---------------------------------------------------------------
-  # app — The Ark8de Go HTTP server
-  # ---------------------------------------------------------------
-  app:
-    # build: instructs Docker Compose to build the image from the Dockerfile
-    # at the specified path, relative to this docker-compose.yml file.
-    build:
-      context: ../monolith  # the Dockerfile is at monolith/Dockerfile
-      dockerfile: Dockerfile
-
-    container_name: ark8de-app
-
-    ports:
-      # Map host port 8080 to the container's port 8080.
-      # The Go server listens on 8080 (set by the PORT env var below).
-      - "8080:8080"
-
-    environment:
-      # DATABASE_URL uses the postgres service name as the hostname.
-      # Docker Compose creates an internal DNS entry for each service,
-      # so "postgres" resolves to the postgres container's IP address.
-      DATABASE_URL: postgres://ark8de:ark8de_dev@postgres:5432/ark8de?sslmode=disable
-      PORT: "8080"
-      # JWT_SECRET signs and verifies JWT tokens. Use a long random value in production.
-      # Generate one with: openssl rand -base64 32
-      JWT_SECRET: local-dev-secret-change-me-in-production
-
-    depends_on:
-      postgres:
-        condition: service_healthy
-        # Do not start the app until postgres is healthy.
-        # Without this, the app would crash immediately trying to connect.
-
-    restart: unless-stopped
-
-# ---------------------------------------------------------------
-# Named volumes — managed by Docker, persisted across restarts
-# ---------------------------------------------------------------
 volumes:
   postgres_data:
-    # This volume stores all PostgreSQL data files.
-    # Data survives `docker compose down` but is wiped by `docker compose down -v`.
   pgadmin_data:
-    # This volume stores pgAdmin's configuration: registered servers, saved
-    # queries, and preferences. Persists across container restarts.
