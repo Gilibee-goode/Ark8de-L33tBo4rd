@@ -1,0 +1,43 @@
+{{define "title"}}Register — Ark8de{{end}}
+
+{{define "content"}}
+<div class="auth-card">
+    <h1>Create Account</h1>
+    <p class="subtitle">Join The Ark8de</p>
+
+    <form method="POST" action="/register">
+        {{/* CSRF token — required by the CSRFProtect middleware */}}
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+        <div class="form-group">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" class="form-control"
+                   placeholder="3–50 chars, letters/digits/underscores" required autofocus>
+        </div>
+
+        <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" class="form-control"
+                   placeholder="you@example.com" required>
+        </div>
+
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" class="form-control"
+                   placeholder="Min 8 chars, upper + lower + digit" required>
+        </div>
+
+        <div class="form-group">
+            <label for="confirm_password">Confirm Password</label>
+            <input type="password" id="confirm_password" name="confirm_password" class="form-control"
+                   placeholder="Type your password again" required>
+        </div>
+
+        <button type="submit" class="btn btn-full">Create Account</button>
+    </form>
+
+    <p class="auth-footer">
+        Already have an account? <a href="/login">Log in</a>
+    </p>
+</div>
+{{end}}

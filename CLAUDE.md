@@ -1,56 +1,75 @@
 # Claude Code — Project Instructions for Ark8de-L33tBo4rd
 
-This file is read automatically by Claude Code at the start of every session.
 These rules apply to ALL code written in this project, no exceptions.
 
 ---
 
-## Primary Goal: This is a Go Learning Project
+## This is a Go Learning Project
 
 The person working on this project is **learning Go for the first time**.
-The goal is not just to produce working code — it is to produce code that teaches.
-Correct and clean code that the learner cannot understand is a failure.
-Prioritise clarity and explanation over brevity.
+The goal is not just working code — it is code that teaches.
+Correct code the learner cannot understand is a failure. Prioritise clarity over brevity.
 
 ---
 
-## Rule 1: Comment Everything That Isn't Obvious
+## Rule 1: Orient Before You Build
 
-Add comments to:
-- Every function and method — what it does, what it receives, what it returns
-- Every struct and its fields — what each field represents in the context of the game
-- Any line that uses a Go feature that a beginner might not know (defer, goroutines, channels, interfaces, type assertions, etc.)
-- Any non-trivial conditional — explain *why* the condition exists, not just what it checks
-- Any SQL query — explain what it fetches and why it's structured that way
-- Any error handling block — explain what could have gone wrong and why we handle it this way
+Before starting any task, read **PROGRESS.md** and **ARCHITECTURE.md** to understand what exists, what's next, and which patterns are established. Do not assume — these files are the source of truth.
 
-Do NOT comment things that are truly self-evident (e.g. `i++  // increment i`).
-The bar is: "would a developer new to Go understand this without a comment?" If no, comment it.
+---
 
-### Example of what good commenting looks like:
+## Rule 2: Code Structure — 3-Layer Pattern
+
+Every domain package (`auth`, `player`, `team`, `leaderboard`) follows:
+
+| File | Layer | Allowed to touch |
+|---|---|---|
+| `handler.go` | HTTP | Parse request, call service, write response. No SQL, no game logic. |
+| `service.go` | Business logic | Validation, rules, computation. No HTTP, no SQL. |
+| `repository.go` | Database | SQL queries, return domain types. No HTTP, no game logic. |
+| `model.go` | Types | Structs, constants, sentinel errors. |
+
+Services depend on a `Repository` interface (defined in `service.go`) for mock injection in tests.
+Add a comment at the top of each file stating which layer it is and what it may do.
+
+---
+
+## Rule 3: Comment Everything That Isn't Obvious
+
+**Comment:** every function/method (what, receives, returns), every struct and field (what it represents in the game), any Go feature a beginner wouldn't know, any non-trivial conditional (why, not what), any SQL query (what it fetches and why), any error handling (what went wrong and why we handle it this way).
+
+**Don't comment** the truly self-evident (`i++`). The bar: "would a developer new to Go understand this without a comment?"
+
+**Explain imports** — group standard library / third-party / internal with a blank line and label. Annotate each package with what it is and why it's needed in this file.
+
+**Explain Go concepts inline on first use** — not just what the line does, but what the concept is:
+`defer`, interfaces, goroutines, channels, struct embedding, error wrapping (`%w`), pointer vs value receivers, type assertions, `init()`, blank identifier `_`.
+
+### Example of good style:
 
 ```go
+import (
+    // --- Standard library ---
+    "context" // provides Context for cancellation — passed into DB queries and HTTP handlers
+    "fmt"     // string formatting and error wrapping with fmt.Errorf
+
+    // --- Third-party ---
+    "github.com/jackc/pgx/v5/pgxpool" // PostgreSQL connection pool — faster than database/sql for Postgres
+)
+
 // PlayerRepository handles all database operations for players.
-// It is the only layer in the app that is allowed to talk to the database directly —
-// all business logic lives in PlayerService instead.
+// It is the only layer allowed to talk to the DB — business logic lives in PlayerService.
 type PlayerRepository struct {
-    // db is the connection pool to PostgreSQL. We use pgx which is faster
-    // than the standard database/sql driver and has better Postgres-specific features.
-    db *pgxpool.Pool
+    db *pgxpool.Pool // connection pool to PostgreSQL
 }
 
-// GetByID fetches a single player from the database by their UUID.
-// It returns a (Player, nil) on success, or (nil, error) if not found or DB error.
-// The context is passed in so the caller can cancel the query if needed
-// (e.g. if the HTTP request is cancelled by the client).
+// GetByID fetches a player by UUID. Returns (Player, nil) on success or (nil, error) if not found.
 func (r *PlayerRepository) GetByID(ctx context.Context, id uuid.UUID) (*Player, error) {
-    // QueryRow executes a query expected to return at most one row.
-    // $1 is a placeholder for the first argument (id) — this prevents SQL injection.
+    // QueryRow returns at most one row. $1 is a placeholder (prevents SQL injection).
     row := r.db.QueryRow(ctx, "SELECT id, username, email, role FROM players WHERE id = $1", id)
 
     var p Player
-    // Scan reads the columns from the result row into our struct fields, in order.
-    // If the player is not found, row.Scan returns pgx.ErrNoRows.
+    // Scan reads columns into struct fields. Returns pgx.ErrNoRows if the player doesn't exist.
     if err := row.Scan(&p.ID, &p.Username, &p.Email, &p.Role); err != nil {
         return nil, fmt.Errorf("GetByID: %w", err) // %w wraps the error so callers can unwrap it
     }
@@ -60,142 +79,128 @@ func (r *PlayerRepository) GetByID(ctx context.Context, id uuid.UUID) (*Player, 
 
 ---
 
-## Rule 2: Explain Every Import
+## Rule 4: Error Messages Must Be Human-Readable
 
-At the top of every Go file, add a comment block above the `import` statement explaining
-what each imported package is and why it's needed in this specific file.
-Group standard library, third-party, and internal imports with a blank line between them,
-and label each group.
-
-### Example:
+Wrap errors with context at every layer so the full chain is visible in logs:
 
 ```go
-import (
-    // --- Standard library ---
-    "context" // provides Context for cancellation and deadlines — passed into DB queries and HTTP handlers
-    "fmt"     // string formatting and error wrapping with fmt.Errorf
-
-    // --- Third-party ---
-    "github.com/go-chi/chi/v5"         // HTTP router — we use chi because it is idiomatic and uses standard net/http interfaces
-    "github.com/jackc/pgx/v5/pgxpool"  // PostgreSQL driver and connection pool — faster than database/sql for Postgres
-
-    // --- Internal packages ---
-    "github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/middleware" // our JWT auth middleware
-)
-```
-
----
-
-## Rule 3: Explain Go Concepts Inline When First Used
-
-The first time a Go concept appears in the codebase, add a comment explaining it as a concept,
-not just what this specific line does.
-
-Concepts that always need an explanation comment on first use:
-- `defer` — explain what defer does and why we use it here
-- Interfaces — explain what an interface is and why we define it this way
-- Goroutines (`go func()`) — explain what a goroutine is
-- Channels — explain what a channel is and how it works
-- Struct embedding — explain what embedding means
-- Error wrapping with `%w` — explain why we wrap errors
-- Pointer receivers vs value receivers — explain the difference on first occurrence
-- Type assertions (`x.(Type)`) — explain what this does and when it panics
-- `init()` functions — explain when init runs
-- Blank identifier `_` in non-obvious contexts
-
----
-
-## Rule 4: Phase Documentation with Flow Diagrams
-
-At the end of each completed phase, create a markdown documentation file:
-
-**Location**: `docs/phase-N-complete.md`
-**Contents**:
-1. What was built in this phase (brief summary)
-2. A Mermaid diagram showing the flow of information through the app as it stands at the end of this phase
-3. A Mermaid diagram of the database schema as it stands
-4. Key Go concepts introduced in this phase (with a one-line explanation of each)
-5. What the next phase will add
-
-Use Mermaid diagrams — they render natively in GitHub and are written as plain text in markdown.
-
-### Example diagram style:
-
-```mermaid
-flowchart LR
-    Browser -->|POST /auth/login| Router
-    Router --> AuthHandler
-    AuthHandler --> AuthService
-    AuthService -->|bcrypt.CompareHashAndPassword| PasswordCheck
-    AuthService -->|SELECT FROM players| DB[(PostgreSQL)]
-    AuthService -->|jwt.NewWithClaims| JWT
-    AuthHandler -->|200 + token| Browser
-```
-
----
-
-## Rule 5: Code Structure Rules
-
-Always follow the 3-layer pattern within each internal package:
-
-```
-handler.go     — HTTP layer only: parse request, call service, write response. No SQL, no business logic.
-service.go     — Business logic only: rules, validation, calculations. No HTTP, no SQL.
-repository.go  — Database layer only: SQL queries. Returns domain types. No HTTP, no business logic.
-```
-
-Add a comment at the top of each file stating which layer it is and what it is allowed to do.
-
-### Example (handler.go top comment):
-```go
-// Package auth — HTTP Handler layer
-//
-// This file is ONLY responsible for:
-//   - Reading data from the HTTP request (body, headers, URL params)
-//   - Calling the AuthService to do the actual work
-//   - Writing the HTTP response (status code + JSON body)
-//
-// It must NOT contain business logic or SQL queries.
-// If you find yourself writing an if-statement about game rules here, it belongs in service.go.
-```
-
----
-
-## Rule 6: Error Messages Must Be Human-Readable
-
-Every error message must be understandable without reading the code.
-Wrap errors with context at every layer so the full chain is visible in logs.
-
-```go
-// Good — tells you exactly where it failed and why
-return fmt.Errorf("PlayerService.AllocateSkills: player %s has only %d skill points remaining, need %d: %w",
+// Good — says where, what, and why
+return fmt.Errorf("PlayerService.AllocateSkills: player %s has %d SP remaining, need %d: %w",
     playerID, remaining, cost, ErrInsufficientSkillPoints)
 
-// Bad — useless without reading the code
+// Bad
 return err
 ```
 
 ---
 
-## Rule 7: Seed Data Must Reflect the Real Game
+## Rule 5: Every Change Gets Tests
 
-The seed script must create realistic test data:
-- At least 2 full teams of 4 players each
-- Players with different class roles (tank, dps, healer, support)
-- Some players with gear selected, some without
-- One team with a gear pool in the positive, one in the negative (to test the warning display)
-- At least one moderator account and one admin account
-- Skill nodes seeded for all 4 class roles
+- **Service-layer logic** → unit tests with hand-written mocks (see `internal/auth/service_test.go` for the pattern)
+- **New endpoints or middleware** → integration tests via `httptest` (see `tests/` directory)
+- **Bug fixes** → a test that reproduces the bug before the fix
 
-Seed credentials must be documented in a comment at the top of `scripts/seed.go`.
+Run the relevant suite before declaring done. If existing tests break, fix them in the same task.
+
+```bash
+cd monolith && go test ./internal/... -v   # unit (fast, no DB)
+cd monolith && go test ./tests/... -v      # integration (needs Docker)
+```
 
 ---
 
-## Reminder: What This Project Is For
+## Rule 6: Document as You Go
 
-This project exists to:
-1. Build something genuinely fun and useful (a leaderboard for The Ark8de)
-2. Teach Go through doing, not through reading documentation
-3. Teach DevOps practices incrementally (Docker → k8s → CI/CD → GitOps → Monitoring)
+Each completed segment of work must include:
+1. **PROGRESS.md updated** — tick the checkbox, add a note if scope changed
+2. **Phase docs** — when a phase milestone is reached, create `docs/phase-N-complete.md` with:
+   - What was built (brief summary)
+   - Mermaid diagrams of information flow and DB schema
+   - Table of new Go concepts introduced (one-line explanation each)
+   - What the next phase will add
+3. **Code-level docs** — per Rules 3–4 (comments on functions, imports, concepts)
 
-When in doubt, choose the approach that teaches more, not the one that is faster to write.
+Documentation ships with the code, not after it.
+
+---
+
+## Rule 7: Seed Data Must Reflect the Real Game
+
+The seed script must create: at least 2 full teams of 4+ players, all 4 class roles represented, some players with gear and some without, one team gear pool positive and one negative, at least one moderator and one admin account, skills seeded for all class roles. Seed credentials documented at the top of the seed file.
+
+---
+
+## Codebase Map
+
+```
+monolith/
+├── cmd/
+│   ├── server/main.go        (173L)  HTTP server — env, DB connect, router, graceful shutdown
+│   ├── migrate/main.go       (142L)  CLI for golang-migrate up/down
+│   ├── seed/main.go          (573L)  Seeds 2 teams, 11 players, skills, gear, kredits
+│   ├── auth-service/                  Phase 3 microservice :8081 — /auth/*
+│   ├── player-service/                Phase 3 microservice :8082 — /api/players/*, /api/skills (+NATS)
+│   ├── team-service/                  Phase 3 microservice :8083 — /api/teams/* (+NATS)
+│   ├── leaderboard-service/           Phase 3 microservice :8084 — /api/leaderboard/* (NATS subscriber)
+│   ├── frontend-service/              Phase 3 microservice :8085 — HTML pages, /static, sessions
+│   └── gateway/                       Phase 3 api-gateway :8080 — reverse proxy + edge JWT validation
+│
+├── internal/
+│   ├── app/router.go         (196L)  Builds chi router — shared by server and tests
+│   ├── app/service_routers.go        Per-service router builders (Phase 3)
+│   ├── app/run.go                    Shared service bootstrap (env, DB, NATS, graceful shutdown)
+│   ├── events/                       NATS JetStream publisher/subscriber + event payload types
+│   │
+│   ├── auth/                          Register, login, JWT
+│   │   ├── handler.go        (158L)  POST /auth/register, POST /auth/login, GET /auth/me
+│   │   ├── service.go        (348L)  Password hashing, JWT generation, validation
+│   │   ├── repository.go     (189L)  CreatePlayer, GetByEmail, GetByID
+│   │   ├── model.go          (135L)  Player struct, requests, roles
+│   │   └── service_test.go   (341L)  11 unit tests
+│   │
+│   ├── player/                        Class, skills, gear, kredits, stats
+│   │   ├── handler.go        (254L)  /api/players/me/* endpoints
+│   │   ├── service.go        (349L)  Stat computation, skill budget, kredit transfer
+│   │   ├── repository.go     (530L)  17 methods — skills, gear, kredits, stats
+│   │   ├── model.go          (156L)  Skill, GearType, PlayerStats, KreditTransaction
+│   │   └── service_test.go   (603L)  22 unit tests
+│   │
+│   ├── team/                          Teams, join requests, arkade points
+│   │   ├── handler.go        (298L)  /api/teams/* endpoints
+│   │   ├── service.go        (409L)  Authorization, join flow, lock-in, points
+│   │   ├── repository.go     (546L)  19 methods — CRUD, members, joins, points
+│   │   ├── model.go          (90L)   Team, JoinRequest, ArkadePointLog
+│   │   └── service_test.go   (797L)  33 unit tests
+│   │
+│   ├── leaderboard/                   Ranked team list
+│   │   ├── handler.go        (50L)   GET /api/leaderboard, GET /api/leaderboard/teams/:id
+│   │   ├── service.go        (47L)   Pure delegation
+│   │   ├── repository.go     (67L)   RANK() window function query
+│   │   └── model.go          (23L)   LeaderboardEntry
+│   │
+│   ├── frontend/handler.go   (282L)  Server-rendered HTML — leaderboard, team detail
+│   ├── middleware/auth.go     (232L)  JWT extraction, role enforcement, context injection
+│   ├── db/db.go              (65L)   pgxpool connection setup
+│   └── respond/respond.go    (64L)   JSON/error response helpers
+│
+├── tests/                             Integration tests (55 tests, real PostgreSQL)
+│   ├── setup_test.go         (456L)  TestMain — testcontainers or DATABASE_URL
+│   ├── container_test.go     (134L)  testcontainers-go PostgreSQL helper
+│   ├── auth_test.go          (218L)  11 subtests
+│   ├── player_test.go        (422L)  16 subtests
+│   ├── team_test.go          (393L)  23 subtests
+│   ├── leaderboard_test.go   (110L)  3 subtests
+│   └── frontend_test.go      (116L)  5 tests
+│
+├── templates/                         Go HTML templates (dark theme)
+├── static/                            CSS, images
+├── Dockerfile                         Multi-stage scratch build, parameterized: --build-arg SERVICE=<cmd>
+└── go.mod
+
+db/migrations/                         13 SQL migration pairs (schema source of truth)
+infra/docker-compose.yml               Local dev: postgres + nats + migrate + 6 services + pgadmin
+infra/terraform/                       Phase 4: modules/cluster (KIND) + environments/dev
+infra/k8s/base/                        Phase 5: per-service Deployment/Service/ConfigMap/HPA, jobs, ingress, SealedSecret
+infra/k8s/helm-values/                 postgres (Bitnami), nats, ingress-nginx values
+docs/                                  Phase docs with Mermaid diagrams
+```

@@ -1,0 +1,47 @@
+{{define "title"}}Leaderboard — Ark8de{{end}}
+
+{{define "content"}}
+<div class="page-header">
+    <h1>🏆 Leaderboard</h1>
+    <p class="subtitle">Teams ranked by Arkade Points</p>
+</div>
+
+{{if .Entries}}
+<div class="leaderboard-table">
+    <table>
+        <thead>
+            <tr>
+                <th>Rank</th>
+                <th>Team</th>
+                <th>Tag</th>
+                <th>Members</th>
+                <th>Arkade Points</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        {{range .Entries}}
+            <tr class="leaderboard-row {{if eq (deref .Rank) 1}}rank-first{{else if eq (deref .Rank) 2}}rank-second{{else if eq (deref .Rank) 3}}rank-third{{end}}">
+                <td class="rank-cell">
+                    {{if .Rank}}
+                        {{if eq (deref .Rank) 1}}🥇{{else if eq (deref .Rank) 2}}🥈{{else if eq (deref .Rank) 3}}🥉{{else}}#{{deref .Rank}}{{end}}
+                    {{else}}
+                        —
+                    {{end}}
+                </td>
+                <td class="team-name">{{.TeamName}}</td>
+                <td><span class="tag">{{.TeamTag}}</span></td>
+                <td>{{.MemberCount}}</td>
+                <td class="points">{{.ArkadePoints}}</td>
+                <td><a href="/teams/{{.TeamID}}" class="btn btn-sm">View</a></td>
+            </tr>
+        {{end}}
+        </tbody>
+    </table>
+</div>
+{{else}}
+<div class="empty-state">
+    <p>No teams yet — be the first to create one!</p>
+</div>
+{{end}}
+{{end}}

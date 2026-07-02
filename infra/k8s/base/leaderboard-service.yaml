@@ -1,0 +1,83 @@
+# leaderboard-service — ConfigMap + Deployment + Service + HPA
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: leaderboard-service
+  namespace: ark8de
+data:
+  PORT: "8084"
+  NATS_URL: "nats://nats.ark8de-infra.svc.cluster.local:4222"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: leaderboard-service
+  namespace: ark8de
+  labels: { app: leaderboard-service }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: leaderboard-service }
+  template:
+    metadata:
+      labels: { app: leaderboard-service }
+    spec:
+      containers:
+        - name: leaderboard-service
+          image: ark8de/leaderboard-service:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8084
+          envFrom:
+            - configMapRef: { name: leaderboard-service }
+          env:
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef: { name: app-secrets, key: JWT_SECRET }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: app-secrets, key: DATABASE_URL }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8084 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8084 }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: leaderboard-service
+  namespace: ark8de
+  labels: { app: leaderboard-service }
+spec:
+  type: ClusterIP
+  selector: { app: leaderboard-service }
+  ports:
+    - port: 8084
+      targetPort: 8084
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: leaderboard-service
+  namespace: ark8de
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: leaderboard-service
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

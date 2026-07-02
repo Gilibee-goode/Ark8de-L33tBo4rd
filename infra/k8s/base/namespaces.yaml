@@ -1,0 +1,10 @@
+# Namespaces: apps in ark8de, shared infra (postgres, nats) in ark8de-infra.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ark8de
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ark8de-infra

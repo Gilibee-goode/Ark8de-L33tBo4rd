@@ -78,9 +78,7 @@ tasks:
     desc: Run the seed script to populate the database with test data
     dir: monolith
     cmds:
-      # The seed script lives outside the monolith module in scripts/,
-      # so we reference it with a relative path from the monolith directory.
-      - go run ../scripts/seed.go
+      - go run ./cmd/seed
 
   deps:
     desc: Tidy Go module dependencies (add missing, remove unused)

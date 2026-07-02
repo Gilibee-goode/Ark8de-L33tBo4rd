@@ -1,0 +1,18 @@
+# ingress-nginx configured for KIND: the controller binds hostPorts 80/443 on
+# the control-plane node (labelled ingress-ready=true by Terraform), which the
+# kind_cluster maps to localhost:8880/8443 on the laptop.
+# Install:
+#   helm install ingress-nginx ingress-nginx/ingress-nginx -n ingress-nginx \
+#     --create-namespace -f infra/k8s/helm-values/ingress-nginx-values.yaml
+controller:
+  hostPort:
+    enabled: true
+  service:
+    type: NodePort
+  nodeSelector:
+    ingress-ready: "true"
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+  watchIngressWithoutClass: true

@@ -1,0 +1,74 @@
+{{define "title"}}{{.Detail.Name}} — Ark8de{{end}}
+
+{{define "content"}}
+<div class="page-header">
+    <h1>
+        <span class="tag">{{.Detail.Tag}}</span>
+        {{.Detail.Name}}
+        {{if .Detail.IsLockedIn}}<span class="badge badge-locked">Locked In</span>{{end}}
+    </h1>
+    <p class="subtitle">
+        {{len .Detail.Members}} members &middot; {{.Detail.ArkadePoints}} Arkade Points
+    </p>
+    <p class="subtitle">Owned by <strong>{{.Detail.OwnerUsername}}</strong></p>
+</div>
+
+<div class="team-detail-grid">
+    <!-- Roster card -->
+    <div class="card">
+        <h2>Roster</h2>
+        {{if .Detail.Members}}
+        <table>
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Class</th>
+                </tr>
+            </thead>
+            <tbody>
+            {{range .Detail.Members}}
+                <tr>
+                    <td>{{.Username}}</td>
+                    <td>
+                        {{if .ClassRole}}
+                            {{/* .ClassRole is *string — Go templates auto-dereference
+                                 pointers for printing, so {{.ClassRole}} prints the
+                                 actual string value, not the memory address. */}}
+                            <span class="class-badge class-{{.ClassRole}}">{{.ClassRole}}</span>
+                        {{else}}
+                            <span class="muted">— no class</span>
+                        {{end}}
+                    </td>
+                </tr>
+            {{end}}
+            </tbody>
+        </table>
+        {{else}}
+        <p class="muted">No members yet.</p>
+        {{end}}
+    </div>
+
+    <!-- Gear pool card -->
+    <div class="card">
+        <h2>Gear Pool</h2>
+        {{/* GearPoolNegative is true when GearPointsUsed > GearPointsTotal.
+             We use it to switch between success/danger CSS classes. */}}
+        <div class="gear-pool {{if .Detail.GearPoolNegative}}gear-pool-negative{{else}}gear-pool-positive{{end}}">
+            <div class="gear-pool-bar">
+                <span class="gear-points-used">{{.Detail.GearPointsUsed}}</span>
+                <span class="gear-points-total"> / {{.Detail.GearPointsTotal}}</span>
+                <span class="gear-points-label"> gear points used</span>
+            </div>
+            {{if .Detail.GearPoolNegative}}
+            <p class="gear-warning">This team is over their gear point budget!</p>
+            {{else}}
+            <p class="gear-ok">Within budget</p>
+            {{end}}
+        </div>
+    </div>
+</div>
+
+<p style="margin-top: 1rem;">
+    <a href="/" class="btn btn-sm">Back to Leaderboard</a>
+</p>
+{{end}}

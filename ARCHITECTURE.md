@@ -427,6 +427,53 @@ ark8de-l33tbo4rd/
 
 ---
 
+## Session & GUI Authentication
+
+Browser-based login using server-side sessions stored in PostgreSQL:
+
+```
+Browser → POST /login (form) → AuthService.Login → SessionService.CreateSession
+  → Set session_id cookie (HttpOnly, SameSite=Lax, 7-day expiry)
+  → Redirect to /profile
+
+Browser → GET /profile (cookie) → OptionalAuthenticate middleware
+  → Read session_id cookie → SessionService.GetSession → inject player into context
+  → FrontendHandler renders page with PageContext (LoggedIn, Username, Role)
+```
+
+**Key design choices:**
+- Server-side sessions (not JWT-in-cookie) — teaches session stores, revocation, stateful vs stateless
+- CSRF protection via double-submit cookie on all form POST/PUT/DELETE
+- Flash messages via short-lived cookie (base64 JSON, MaxAge=10s, read-once)
+- `OptionalAuthenticate` middleware on all frontend routes — reads session if present, no 401 if absent
+- `PageContext` struct embedded in all page data — navbar gets `.LoggedIn`, `.Username`, `.Role` automatically
+- JSON API continues using Bearer JWT tokens (backward compatible)
+
+```mermaid
+flowchart LR
+    subgraph "Browser (HTML forms)"
+        Form["POST /login<br/>POST /register<br/>POST /logout"]
+        Cookie["session_id cookie"]
+    end
+
+    subgraph "Middleware"
+        OA["OptionalAuthenticate<br/>(cookie → session lookup)"]
+        CSRF["CSRFProtect<br/>(double-submit cookie)"]
+        Auth["Authenticate<br/>(Bearer JWT — API only)"]
+    end
+
+    subgraph "Handlers"
+        FE["FrontendHandler<br/>(HTML + forms)"]
+        API["API Handlers<br/>(JSON)"]
+    end
+
+    Form --> CSRF --> OA --> FE
+    Cookie -.-> OA
+    API --> Auth
+```
+
+---
+
 ## Key Design Decisions
 
 - **Monolith first**: Clean internal package boundaries allow Phase 3 extraction to be mechanical refactoring, not redesign

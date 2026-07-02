@@ -1,0 +1,22 @@
+# One-shot Job: seeds demo data (2 teams, 11 players, skills, gear, kredits).
+# Idempotence is NOT guaranteed — run once on a fresh database.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-seed
+  namespace: ark8de
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels: { app: db-seed }
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: seed
+          image: ark8de/seed:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: app-secrets, key: DATABASE_URL }

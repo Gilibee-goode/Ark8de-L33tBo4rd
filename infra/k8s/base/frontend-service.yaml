@@ -1,0 +1,82 @@
+# frontend-service — ConfigMap + Deployment + Service + HPA
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-service
+  namespace: ark8de
+data:
+  PORT: "8085"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-service
+  namespace: ark8de
+  labels: { app: frontend-service }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: frontend-service }
+  template:
+    metadata:
+      labels: { app: frontend-service }
+    spec:
+      containers:
+        - name: frontend-service
+          image: ark8de/frontend-service:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8085
+          envFrom:
+            - configMapRef: { name: frontend-service }
+          env:
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef: { name: app-secrets, key: JWT_SECRET }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: app-secrets, key: DATABASE_URL }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8085 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8085 }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: ark8de
+  labels: { app: frontend-service }
+spec:
+  type: ClusterIP
+  selector: { app: frontend-service }
+  ports:
+    - port: 8085
+      targetPort: 8085
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend-service
+  namespace: ark8de
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend-service
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

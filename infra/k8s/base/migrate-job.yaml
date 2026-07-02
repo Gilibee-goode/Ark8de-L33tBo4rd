@@ -1,0 +1,27 @@
+# One-shot Job: applies db/migrations (baked into the image) then exits.
+# Re-run after schema changes with:
+#   kubectl delete job db-migrate -n ark8de --ignore-not-found
+#   kubectl apply -f infra/k8s/base/migrate-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migrate
+  namespace: ark8de
+spec:
+  backoffLimit: 4
+  template:
+    metadata:
+      labels: { app: db-migrate }
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: ark8de/migrate:dev
+          imagePullPolicy: IfNotPresent
+          command: ["/app/service", "up"]
+          env:
+            - name: MIGRATIONS_PATH
+              value: /app/migrations
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: app-secrets, key: DATABASE_URL }

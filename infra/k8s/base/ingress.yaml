@@ -1,0 +1,20 @@
+# All external traffic enters through ingress-nginx and lands on the gateway,
+# which routes to the individual services. With the KIND port mappings from
+# Terraform, the app is reachable at http://localhost:8880.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ark8de
+  namespace: ark8de
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port:
+                  number: 8080

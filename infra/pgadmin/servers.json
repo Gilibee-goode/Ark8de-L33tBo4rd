@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "ark8de (local dev)",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "ark8de",
+      "Username": "ark8de",
+      "SSLMode": "disable"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+# Bitnami PostgreSQL — shared database for all Ark8de services (dev values).
+# Install:
+#   helm install postgres oci://registry-1.docker.io/bitnamicharts/postgresql \
+#     -n ark8de-infra -f infra/k8s/helm-values/postgres-values.yaml
+auth:
+  username: ark8de
+  password: ark8de_dev # dev only — prod must come from a (Sealed) Secret
+  database: ark8de
+
+primary:
+  persistence:
+    enabled: true
+    size: 1Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 512Mi

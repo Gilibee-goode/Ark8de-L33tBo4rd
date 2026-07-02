@@ -1,0 +1,77 @@
+{{define "title"}}Moderator Panel — Ark8de{{end}}
+
+{{define "content"}}
+<div class="page-header">
+    <h1>Moderator Panel</h1>
+    <p class="subtitle">Award Arkade Points and manage Kredits</p>
+</div>
+
+<div class="mod-grid">
+
+    <!-- Award Arkade Points -->
+    <div class="card">
+        <h2>Award Arkade Points</h2>
+        <p class="muted" style="margin-bottom: 1rem;">
+            Select a team and enter a delta. Positive = award, negative = deduct.
+        </p>
+        {{/* This form POSTs to a server-side handler instead of using JavaScript.
+             The handler validates the input, calls the team service, and redirects
+             back to this page with a flash message showing the result. */}}
+        <form method="POST" action="/mod/award-points">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+            <div class="form-group">
+                <label for="team-select">Team</label>
+                <select id="team-select" name="team_id" class="form-control">
+                    <option value="">— select a team —</option>
+                    {{range .Teams}}
+                    {{/* range loops over .Teams (a []*team.Team slice).
+                         Inside the loop, . is the current Team value. */}}
+                    <option value="{{.ID}}">{{.Name}} [{{.Tag}}] — {{.ArkadePoints}} pts</option>
+                    {{end}}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="delta-input">Points Delta</label>
+                <input type="number" id="delta-input" name="delta" class="form-control"
+                       placeholder="e.g. 10 or -5">
+            </div>
+            <div class="form-group">
+                <label for="reason-input">Reason</label>
+                <input type="text" id="reason-input" name="reason" class="form-control"
+                       placeholder="e.g. Won round 3">
+            </div>
+            <button type="submit" class="btn">Award Points</button>
+        </form>
+    </div>
+
+    <!-- Grant Kredits -->
+    <div class="card">
+        <h2>Grant Kredits</h2>
+        <p class="muted" style="margin-bottom: 1rem;">
+            Grant Kredits to a player. Enter their Player UUID (visible on their profile page).
+        </p>
+        <form method="POST" action="/mod/grant-kredits">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+            <div class="form-group">
+                <label for="player-id-input">Player ID (UUID)</label>
+                <input type="text" id="player-id-input" name="player_id" class="form-control"
+                       placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+            </div>
+            <div class="form-group">
+                <label for="amount-input">Amount</label>
+                <input type="number" id="amount-input" name="amount" class="form-control"
+                       placeholder="e.g. 100">
+            </div>
+            <div class="form-group">
+                <label for="note-input">Note (optional)</label>
+                <input type="text" id="note-input" name="note" class="form-control"
+                       placeholder="e.g. Event participation bonus">
+            </div>
+            <button type="submit" class="btn">Grant Kredits</button>
+        </form>
+    </div>
+
+</div>
+{{end}}

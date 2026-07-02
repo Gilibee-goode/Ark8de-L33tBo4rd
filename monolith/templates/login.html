@@ -1,0 +1,32 @@
+{{define "title"}}Login — Ark8de{{end}}
+
+{{define "content"}}
+<div class="auth-card">
+    <h1>Log In</h1>
+    <p class="subtitle">Welcome back to The Ark8de</p>
+
+    <form method="POST" action="/login">
+        {{/* CSRF token: this hidden field must match the csrf_token cookie.
+             Without it, the CSRFProtect middleware rejects the POST with 403. */}}
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+        <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" class="form-control"
+                   placeholder="you@example.com" required autofocus>
+        </div>
+
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" class="form-control"
+                   placeholder="Your password" required>
+        </div>
+
+        <button type="submit" class="btn btn-full">Log In</button>
+    </form>
+
+    <p class="auth-footer">
+        Don't have an account? <a href="/register">Register</a>
+    </p>
+</div>
+{{end}}

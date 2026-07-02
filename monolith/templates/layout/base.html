@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{block "title" .}}Ark8de Leaderboard{{end}}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <!--
+        htmx lets us make HTTP requests and update parts of the page without
+        writing any JavaScript. A simple hx-get="..." hx-target="#result"
+        on a button is all we need for dynamic updates.
+    -->
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="nav-brand">⚔️ Ark8de Leaderboard</a>
+        <div class="nav-links">
+            <a href="/">Leaderboard</a>
+            {{if .LoggedIn}}
+                <a href="/profile">My Profile</a>
+                {{if or (eq .Role "moderator") (eq .Role "admin")}}
+                    <a href="/mod">Mod Panel</a>
+                {{end}}
+                <span class="nav-user">{{.Username}}</span>
+                <form method="POST" action="/logout" class="nav-logout-form">
+                    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                    <button type="submit" class="btn btn-sm btn-logout">Logout</button>
+                </form>
+            {{else}}
+                <a href="/login" class="btn btn-sm">Login</a>
+                <a href="/register" class="btn btn-sm btn-outline">Register</a>
+            {{end}}
+        </div>
+    </nav>
+
+    {{if .Flash}}
+    <div class="flash flash-{{.Flash.Type}}">{{.Flash.Message}}</div>
+    {{end}}
+
+    <main class="container">
+        {{block "content" .}}{{end}}
+    </main>
+
+    <footer class="footer">
+        <p>Ark8de — Phase 2 Monolith</p>
+    </footer>
+</body>
+</html>
