@@ -30,6 +30,9 @@ import (
 	// --- Third-party ---
 	// golang-jwt/jwt is the library for parsing and validating JWT tokens.
 	"github.com/golang-jwt/jwt/v5"
+
+	// --- Internal packages ---
+	"github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/session" // server-side session lookup for cookie-based auth
 )
 
 // contextKey is a custom unexported type used as keys in the request context.
@@ -48,6 +51,10 @@ const (
 
 	// contextKeyRole is the key for storing the authenticated player's role.
 	contextKeyRole contextKey = "role"
+
+	// contextKeyUsername is the key for storing the authenticated player's username.
+	// Used by the frontend to display the player's name in the navbar.
+	contextKeyUsername contextKey = "username"
 )
 
 // jwtClaims mirrors the Claims struct in auth/service.go.
@@ -218,6 +225,158 @@ func PlayerIDFromContext(ctx context.Context) string {
 func RoleFromContext(ctx context.Context) string {
 	role, _ := ctx.Value(contextKeyRole).(string)
 	return role
+}
+
+// UsernameFromContext retrieves the authenticated player's username from the context.
+// Returns an empty string if not authenticated. Used by the frontend to show
+// the player's name in the navbar without an extra DB lookup.
+func UsernameFromContext(ctx context.Context) string {
+	username, _ := ctx.Value(contextKeyUsername).(string)
+	return username
+}
+
+// AuthenticateWithSessions returns middleware that supports TWO authentication methods:
+//
+//  1. Cookie-based sessions (for browser requests) — checks the "session_id" cookie
+//  2. Bearer JWT tokens (for API requests) — checks the Authorization header
+//
+// The middleware tries the cookie FIRST (because browsers always send cookies).
+// If no cookie is found, it falls back to the Bearer token.
+//
+// This dual approach keeps backward compatibility: all existing JSON API clients
+// (curl, tests, mobile apps) continue to use Bearer tokens, while the new
+// browser-based login uses cookies.
+//
+// Parameters:
+//   - jwtSecret: the signing key for JWT validation (fallback path)
+//   - sessionSvc: the session service for cookie-based lookups
+func AuthenticateWithSessions(jwtSecret string, sessionSvc *session.SessionService) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// --- Path 1: try cookie-based session ---
+			cookie, err := r.Cookie(session.CookieName)
+			if err == nil && cookie.Value != "" {
+				sess, err := sessionSvc.GetSession(r.Context(), cookie.Value)
+				if err == nil {
+					// Valid session found — inject player identity into the context.
+					ctx := context.WithValue(r.Context(), contextKeyPlayerID, sess.PlayerID)
+					ctx = context.WithValue(ctx, contextKeyRole, sess.Role)
+					ctx = context.WithValue(ctx, contextKeyUsername, sess.Username)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
+				// Session invalid or expired — clear the stale cookie so the browser
+				// stops sending it on every request.
+				slog.Debug("AuthenticateWithSessions: session invalid", "error", err)
+				http.SetCookie(w, &http.Cookie{
+					Name:     session.CookieName,
+					Value:    "",
+					Path:     "/",
+					MaxAge:   -1, // -1 tells the browser to delete the cookie immediately
+					HttpOnly: true,
+				})
+			}
+
+			// --- Path 2: fall back to Bearer JWT ---
+			authHeader := r.Header.Get("Authorization")
+			if authHeader == "" {
+				writeError(w, http.StatusUnauthorized, "not authenticated — please log in")
+				return
+			}
+
+			tokenString, ok := strings.CutPrefix(authHeader, "Bearer ")
+			if !ok || tokenString == "" {
+				writeError(w, http.StatusUnauthorized, "Authorization header must be in format: Bearer <token>")
+				return
+			}
+
+			token, err := jwt.ParseWithClaims(tokenString, &jwtClaims{}, func(t *jwt.Token) (any, error) {
+				if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+					return nil, fmt.Errorf("unexpected signing algorithm: %v — expected HS256", t.Header["alg"])
+				}
+				return []byte(jwtSecret), nil
+			})
+			if err != nil {
+				slog.Debug("AuthenticateWithSessions: JWT validation failed", "error", err)
+				writeError(w, http.StatusUnauthorized, "invalid or expired token — please log in again")
+				return
+			}
+
+			claims, ok := token.Claims.(*jwtClaims)
+			if !ok || !token.Valid {
+				writeError(w, http.StatusUnauthorized, "invalid token claims")
+				return
+			}
+
+			ctx := context.WithValue(r.Context(), contextKeyPlayerID, claims.PlayerID)
+			ctx = context.WithValue(ctx, contextKeyRole, claims.Role)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// OptionalAuthenticateWithSessions is like AuthenticateWithSessions but does NOT
+// return 401 if no session or token is found. It simply passes the request through.
+//
+// WHY THIS EXISTS:
+//   Public pages (leaderboard, team detail) don't require authentication, but we
+//   still want the navbar to show "Logged in as <username>" when the player HAS
+//   a valid session cookie. This middleware reads the session if present and
+//   injects identity into the context, but always calls next.ServeHTTP — even
+//   if no authentication is found.
+//
+// Usage: apply to all frontend HTML routes so the base template can conditionally
+// show login/logout links.
+func OptionalAuthenticateWithSessions(jwtSecret string, sessionSvc *session.SessionService) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Try cookie-based session first.
+			cookie, err := r.Cookie(session.CookieName)
+			if err == nil && cookie.Value != "" {
+				sess, err := sessionSvc.GetSession(r.Context(), cookie.Value)
+				if err == nil {
+					ctx := context.WithValue(r.Context(), contextKeyPlayerID, sess.PlayerID)
+					ctx = context.WithValue(ctx, contextKeyRole, sess.Role)
+					ctx = context.WithValue(ctx, contextKeyUsername, sess.Username)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
+				// Session invalid — clear stale cookie but continue (don't block).
+				http.SetCookie(w, &http.Cookie{
+					Name:     session.CookieName,
+					Value:    "",
+					Path:     "/",
+					MaxAge:   -1,
+					HttpOnly: true,
+				})
+			}
+
+			// Try Bearer token (for cases where an API client hits an HTML page).
+			authHeader := r.Header.Get("Authorization")
+			if authHeader != "" {
+				tokenString, ok := strings.CutPrefix(authHeader, "Bearer ")
+				if ok && tokenString != "" {
+					token, err := jwt.ParseWithClaims(tokenString, &jwtClaims{}, func(t *jwt.Token) (any, error) {
+						if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+							return nil, fmt.Errorf("unexpected signing algorithm: %v", t.Header["alg"])
+						}
+						return []byte(jwtSecret), nil
+					})
+					if err == nil {
+						if claims, ok := token.Claims.(*jwtClaims); ok && token.Valid {
+							ctx := context.WithValue(r.Context(), contextKeyPlayerID, claims.PlayerID)
+							ctx = context.WithValue(ctx, contextKeyRole, claims.Role)
+							next.ServeHTTP(w, r.WithContext(ctx))
+							return
+						}
+					}
+				}
+			}
+
+			// No valid authentication found — continue anyway (this is optional auth).
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // writeError writes a JSON error response from within the middleware.

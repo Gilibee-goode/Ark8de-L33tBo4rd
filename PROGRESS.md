@@ -25,13 +25,29 @@
 
 ## Phase 2: Testing + CI (GitHub Actions deferred)
 - [x] Extract shared router into `internal/app/router.go` (used by both server and tests)
-- [x] Integration test suite with `httptest` + real PostgreSQL (55 test cases across 5 files)
-- [x] Unit tests for all service layer functions (66 tests across 3 files — auth, player, team)
+- [x] Integration test suite with `httptest` + real PostgreSQL (70 test cases across 6 files)
+- [x] Unit tests for all service layer functions (74 tests across 4 files — auth, player, team, session)
 - [x] DB tests with `testcontainers-go` (auto-launches PostgreSQL container, runs migrations, no manual setup)
 - [ ] GitHub Actions — `go vet`, `go test`, `golangci-lint`
 - [x] Structured logging with `log/slog` (JSON output via `slog.NewJSONHandler`, all handlers and services)
 - [x] Multi-stage Docker build — scratch-based, 13.3 MB final image (target was < 20MB)
 - [x] `docs/phase-2-complete.md` with diagrams
+
+## Phase 2.5: GUI Login & Session System ✅
+- [x] Server-side sessions in PostgreSQL (`sessions` table — migration 000013)
+- [x] Session package (`internal/session/` — model, repository, service, service_test)
+- [x] Cookie-based auth middleware (`AuthenticateWithSessions`, `OptionalAuthenticateWithSessions`)
+- [x] CSRF protection via double-submit cookie (`internal/middleware/csrf.go`)
+- [x] Flash messages via short-lived cookie (`internal/middleware/flash.go`)
+- [x] PageContext struct — navbar shows login state, username, flash messages on all pages
+- [x] Login page (`GET/POST /login`) — form-based auth, session cookie, redirect
+- [x] Register page (`GET/POST /register`) — form-based signup, password confirmation
+- [x] Logout (`POST /logout`) — session destruction, cookie clearing
+- [x] Moderator panel migrated from JavaScript fetch() to HTML forms with CSRF
+- [x] CSS additions — flash messages, auth cards, navbar user section, button variants
+- [x] Session service unit tests (8 tests with mock repository)
+- [x] Integration tests for login/register/logout/CSRF/navbar (15 new tests in `tests/session_test.go`)
+- [x] Backward compatibility — all 55 existing integration tests pass (Bearer JWT still works)
 
 ## Phase 3: Service Extraction
 - [ ] Extract leaderboard-service

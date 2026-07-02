@@ -199,6 +199,7 @@ func truncateDataTables(ctx context.Context) {
 	// The order matters due to foreign key constraints, but CASCADE handles
 	// dependent rows automatically. We list them explicitly for clarity.
 	tables := []string{
+		"sessions",
 		"kredit_transactions",
 		"arkade_point_logs",
 		"leaderboard_entries",

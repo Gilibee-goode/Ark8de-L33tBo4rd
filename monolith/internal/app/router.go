@@ -31,8 +31,9 @@ import (
 	"github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/auth"        // auth package: register, login, JWT
 	"github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/frontend"    // server-rendered HTML pages
 	"github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/leaderboard" // read-only leaderboard API
-	authmw "github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/middleware" // JWT middleware — aliased to avoid collision with chi's middleware
+	authmw "github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/middleware" // JWT + session middleware — aliased to avoid collision with chi's middleware
 	"github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/player"      // player profile, skills, gear, kredits
+	"github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/session"     // server-side sessions for cookie-based auth
 	"github.com/Gilibee-goode/ark8de-l33tbo4rd/internal/team"        // team management and join requests
 )
 
@@ -74,11 +75,20 @@ func BuildRouter(pool *pgxpool.Pool, jwtSecret string, templatesDir string) chi.
 	leaderboardService := leaderboard.NewLeaderboardService(leaderboardRepo)
 	leaderboardHandler := leaderboard.NewLeaderboardHandler(leaderboardService)
 
+	// Session — server-side sessions for browser-based cookie auth.
+	// The session service is used by the middleware (to look up sessions on each request)
+	// and by the frontend handler (to create/destroy sessions on login/logout).
+	sessionRepo := session.NewSessionRepository(pool)
+	sessionService := session.NewSessionService(sessionRepo)
+
 	// Frontend (server-rendered HTML pages)
+	// Now receives authService and sessionService for login/register/logout forms.
 	frontendHandler := frontend.NewFrontendHandler(
 		leaderboardService,
 		teamService,
 		playerService,
+		authService,
+		sessionService,
 		templatesDir,
 	)
 
@@ -115,16 +125,50 @@ func BuildRouter(pool *pgxpool.Pool, jwtSecret string, templatesDir string) chi.
 	// ======================================================================
 	// Frontend HTML pages (server-rendered — returns HTML, not JSON)
 	// ======================================================================
-	r.Get("/", frontendHandler.Leaderboard)
-	r.Get("/teams/{id}", frontendHandler.TeamDetail)
-	r.With(authmw.Authenticate(jwtSecret)).Get("/profile", frontendHandler.Profile)
-	r.With(
-		authmw.Authenticate(jwtSecret),
-		authmw.RequireRole("moderator", "admin"),
-	).Get("/mod", frontendHandler.ModeratorPanel)
+	// All frontend routes use:
+	//   - OptionalAuthenticateWithSessions: reads session cookie if present,
+	//     injects player identity into context for the navbar, but does NOT
+	//     return 401 if no session is found (public pages still render).
+	//   - CSRFProtect: ensures a csrf_token cookie exists on GET and validates
+	//     the token on POST/PUT/DELETE (double-submit cookie pattern).
+	r.Group(func(r chi.Router) {
+		r.Use(authmw.OptionalAuthenticateWithSessions(jwtSecret, sessionService))
+		r.Use(authmw.CSRFProtect)
+
+		// Public pages — anyone can view
+		r.Get("/", frontendHandler.Leaderboard)
+		r.Get("/teams/{id}", frontendHandler.TeamDetail)
+
+		// Auth pages — login/register forms (redirect if already logged in)
+		r.Get("/login", frontendHandler.LoginPage)
+		r.Post("/login", frontendHandler.LoginSubmit)
+		r.Get("/register", frontendHandler.RegisterPage)
+		r.Post("/register", frontendHandler.RegisterSubmit)
+		r.Post("/logout", frontendHandler.Logout)
+
+		// Authenticated pages — require a valid session or JWT
+		r.With(authmw.AuthenticateWithSessions(jwtSecret, sessionService)).
+			Get("/profile", frontendHandler.Profile)
+
+		// Moderator pages — require moderator or admin role
+		r.With(
+			authmw.AuthenticateWithSessions(jwtSecret, sessionService),
+			authmw.RequireRole("moderator", "admin"),
+		).Get("/mod", frontendHandler.ModeratorPanel)
+
+		r.With(
+			authmw.AuthenticateWithSessions(jwtSecret, sessionService),
+			authmw.RequireRole("moderator", "admin"),
+		).Post("/mod/award-points", frontendHandler.AwardPoints)
+
+		r.With(
+			authmw.AuthenticateWithSessions(jwtSecret, sessionService),
+			authmw.RequireRole("moderator", "admin"),
+		).Post("/mod/grant-kredits", frontendHandler.GrantKredits)
+	})
 
 	// ======================================================================
-	// Auth API (returns JSON)
+	// Auth API (returns JSON — uses Bearer JWT, no CSRF needed)
 	// ======================================================================
 	r.Post("/auth/register", authHandler.Register)
 	r.Post("/auth/login", authHandler.Login)

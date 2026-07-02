@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker compose:*)",
+      "Bash(make migrate-up:*)",
+      "Bash(make help:*)",
+      "Bash(task --list)",
+      "Bash(go get:*)",
+      "Bash(go build:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker volume:*)",
+      "Bash(curl -s http://localhost:8080/healthz)",
+      "Bash(go run:*)",
+      "Bash(go vet:*)",
+      "Bash(go test:*)",
+      "Bash(go version:*)",
+      "Bash(go mod:*)",
+      "Bash(unset DATABASE_URL)",
+      "Bash(docker build:*)",
+      "Bash(docker image:*)",
+      "Read(//Users/gili.abelya/non_work/Ark8de-L33tBo4rd/{printf \"%.1f MB\\\\n\", $1/1024/**)",
+      "Bash(docker run:*)",
+      "Bash(wc -l /Users/gili.abelya/non_work/Ark8de-L33tBo4rd/monolith/internal/*/service.go)",
+      "Bash(wc -l /Users/gili.abelya/non_work/Ark8de-L33tBo4rd/monolith/internal/*/handler.go)",
+      "Bash(wc -l /Users/gili.abelya/non_work/Ark8de-L33tBo4rd/monolith/internal/*/repository.go)",
+      "Bash(ls /Users/gili.abelya/non_work/Ark8de-L33tBo4rd/monolith/internal/*/model.go)",
+      "Bash(wc -l /Users/gili.abelya/non_work/Ark8de-L33tBo4rd/monolith/internal/*/model.go)",
+      "Bash(ls /Users/gili.abelya/non_work/Ark8de-L33tBo4rd/monolith/internal/*/*_test.go)",
+      "Bash(wc -l /Users/gili.abelya/non_work/Ark8de-L33tBo4rd/monolith/cmd/*/main.go)",
+      "Bash(wc -l /Users/gili.abelya/non_work/Ark8de-L33tBo4rd/monolith/tests/*_test.go)",
+      "Bash(wc -l /Users/gili.abelya/non_work/Ark8de-L33tBo4rd/monolith/internal/*/service_test.go)"
+    ]
+  }
+}
